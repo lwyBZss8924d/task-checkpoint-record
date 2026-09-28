@@ -1,0 +1,26 @@
+# aicatlog local runtime
+.env
+.env.*
+!.env.example
+.cache/
+.local/
+workspace/runs/
+workspace/handoff/
+workspace/tasks/artifacts/
+node_modules/
+dist/
+coverage/
+.DS_Store
+.codex/
+.agents/
+auth.json
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Local task evidence and generated development bootstrap
+workspace/
+task-checkpoint.json
+auth-plan.json
+prepared-packet.json
+__pycache__/
