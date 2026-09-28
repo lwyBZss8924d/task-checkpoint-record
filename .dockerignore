@@ -10,6 +10,7 @@
 !config/codex-service.toml
 !config/task-checkpoint.container.example.json
 !config/task-checkpoint.config.schema.json
+!config/runtime.bunfig.toml
 !container/
 !container/**
 **/.env

@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, readFile, chmod, rm, symlink, realpath } from "node:fs/promises";
+import { openSync, readSync, closeSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { runAppServerTask, type AppServerTaskOptions } from "../src/appserver.ts";
 
 const dirs: string[] = [];
-afterEach(async () => { for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true }); });
+const retainedCleanupDirs = new Set<string>();
+afterEach(async () => { for (const dir of dirs.splice(0)) if (!retainedCleanupDirs.has(dir)) await rm(dir, { recursive: true, force: true }); });
 type Answer = { ok: boolean };
 const outputSchema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false };
 const validateOutput = (value: unknown): Answer => {
@@ -75,7 +77,7 @@ createInterface({input:process.stdin}).on("line", line => {
     if(mode === "early") { finish(); send({id:m.id,result:{turn:{id:turn,status:"inProgress",items:[]}}}); return; }
     if(mode === "orphan-descendant") {
       const descendant=spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"ignore"});
-      descendant.unref(); appendFileSync(log,JSON.stringify({descendantPid:descendant.pid})+"\n");
+      descendant.unref(); appendFileSync(log,JSON.stringify({descendantPid:descendant.pid,parentPid:process.pid})+"\n");
     }
     send({id:m.id,result:{turn:{id:turn,status:"inProgress",items:[]}}});
     if(mode === "timeout" || mode === "cancel") return;
@@ -89,6 +91,56 @@ createInterface({input:process.stdin}).on("line", line => {
     input: { dataClass: "synthetic", text: "A synthetic source record. Return {ok:true}." }, outputSchema, validateOutput,
     limits: { deadlineMs: 2000, shutdownMs: 50, ...limits } };
   return { options, dir, home, log, requests: async () => (await readFile(log,"utf8")).trim().split("\n").map(line=>JSON.parse(line)) };
+}
+
+function fixtureProcessIds(f: { log: string }): { leaderPid: number; descendantPid: number } {
+  // Only this fixture's own bounded log is an authority for cleanup targets.
+  const fd = openSync(f.log, "r"); const bytes = Buffer.alloc(16 * 1024 + 1);
+  let length: number;
+  try { length = readSync(fd, bytes, 0, bytes.length, 0); } finally { closeSync(fd); }
+  if (length > 16 * 1024) throw new Error("fixture_metadata_limit");
+  const records = bytes.subarray(0, length).toString("utf8").trim().split("\n").map(line => JSON.parse(line));
+  const leader = records.filter(r => r?.method === "initialize");
+  const descendant = records.filter(r => r?.descendantPid !== undefined);
+  const leaderPid: unknown = leader[0]?.env?.pid, descendantPid: unknown = descendant[0]?.descendantPid;
+  const validPid = (pid: unknown): pid is number => typeof pid === "number" && Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid;
+  if (leader.length !== 1 || descendant.length !== 1 || !validPid(leaderPid) || !validPid(descendantPid)
+    || leaderPid === descendantPid || descendant[0]?.parentPid !== leaderPid) throw new Error("fixture_identity_unavailable");
+  return { leaderPid, descendantPid };
+}
+
+function fixtureErrorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code.slice(0, 80) : "unclassified";
+}
+
+function fixturePidGone(pid: number): boolean {
+  try { process.kill(pid, 0); return false; }
+  catch (error) { if (fixtureErrorCode(error) === "ESRCH") return true; throw error; }
+}
+
+async function cleanupDescendantFixture(f: { dir: string; log: string }, protectedPid: number | undefined) {
+  const observations: { pid: number; closed: boolean; error?: string }[] = [];
+  let metadataError: string | undefined;
+  try {
+    const { leaderPid, descendantPid } = fixtureProcessIds(f);
+    if (!Number.isSafeInteger(protectedPid) || protectedPid! <= 1 || [leaderPid, descendantPid].includes(protectedPid!)) throw new Error("fixture_control_identity_invalid");
+    for (const pid of [leaderPid, descendantPid]) {
+      try {
+        try { process.kill(pid, "SIGKILL"); } catch (error) { if (fixtureErrorCode(error) !== "ESRCH") throw error; }
+        const deadline = Date.now() + 500;
+        while (!fixturePidGone(pid) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+        observations.push({ pid, closed: fixturePidGone(pid) });
+      } catch (error) { observations.push({ pid, closed: false, error: fixtureErrorCode(error) }); }
+    }
+  } catch (error) { metadataError = error instanceof Error ? error.message.slice(0, 120) : "fixture_metadata_unavailable"; }
+  const report = { closed: observations.length === 2 && observations.every(p => p.closed), observations, metadataError };
+  if (!report.closed) {
+    retainedCleanupDirs.add(f.dir);
+    await writeFile(join(f.dir, "cleanup-diagnostic.json"), JSON.stringify(report, null, 2) + "\n");
+    console.error(`Fixture cleanup unknown; bounded diagnostic and request metadata retained at ${f.dir}`);
+  }
+  return report;
 }
 
 describe("owned Codex App Server adapter", () => {
@@ -138,18 +190,51 @@ describe("owned Codex App Server adapter", () => {
     const f=await fixture("orphan-descendant");
     const unrelated=spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{detached:true,stdio:"ignore"});
     const unrelatedClosed=new Promise<void>(resolve=>unrelated.once("close",()=>resolve()));
-    let descendantPid:number|undefined;
     try {
       const result=await runAppServerTask(f.options);
-      const requests=await f.requests();descendantPid=requests.find(r=>r.descendantPid)?.descendantPid;
+      const { descendantPid }=fixtureProcessIds(f);
       expect(typeof descendantPid).toBe("number");
       expect(result.runtime.ownedProcessGroupClosed).toBe(true);
-      expect(()=>process.kill(descendantPid!,0)).toThrow();
+      expect(fixturePidGone(descendantPid)).toBe(true);
       expect(()=>process.kill(unrelated.pid!,0)).not.toThrow();
     } finally {
-      // Fixture cleanup is restricted to the two processes created by this test.
-      if(descendantPid)try{process.kill(descendantPid,"SIGKILL");}catch{}
-      unrelated.kill("SIGTERM");await unrelatedClosed;
+      // Re-read the fixture's identities even when the adapter throws before returning.
+      try {
+        const cleanup=await cleanupDescendantFixture(f,unrelated.pid);
+        expect(()=>process.kill(unrelated.pid!,0)).not.toThrow();
+        expect(cleanup.closed).toBe(true);
+      } finally { unrelated.kill("SIGTERM");await unrelatedClosed; }
+    }
+  });
+  test.skipIf(process.platform === "win32")("fixture cleanup after adapter failure closes its descendant and preserves another owned group",async()=>{
+    const f=await fixture("orphan-descendant");
+    const unrelated=spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{detached:true,stdio:"ignore"});
+    const unrelatedClosed=new Promise<void>(resolve=>unrelated.once("close",()=>resolve()));
+    const originalKill=process.kill;
+    let injected=false;
+    try {
+      await expect(runAppServerTask({...f.options,validateOutput:value=>{
+        const { leaderPid }=fixtureProcessIds(f);
+        // Synthetic errno for this observed group only; it is not a diagnosis of any prior failure.
+        process.kill=((pid,signal)=>{
+          if(pid===-leaderPid && signal===0) {
+            injected=true;
+            throw Object.assign(new Error("synthetic_fixture_probe_failure"),{code:"EPERM"});
+          }
+          return originalKill(pid,signal);
+        }) as typeof process.kill;
+        return validateOutput(value);
+      }})).rejects.toMatchObject({code:"owned_process_group_unverifiable"});
+      expect(injected).toBe(true);
+      expect(fixturePidGone(fixtureProcessIds(f).descendantPid)).toBe(false);
+    } finally {
+      process.kill=originalKill;
+      try {
+        const cleanup=await cleanupDescendantFixture(f,unrelated.pid);
+        expect(cleanup.closed).toBe(true);
+        expect(cleanup.observations).toHaveLength(2);
+        expect(()=>process.kill(unrelated.pid!,0)).not.toThrow();
+      } finally { unrelated.kill("SIGTERM");await unrelatedClosed; }
     }
   });
   test.each([["rollout","regular_file_verified"],["future-rollout","observed_not_verified"]] as const)("%s path observation has no inferred content binding",async(mode,state)=>{

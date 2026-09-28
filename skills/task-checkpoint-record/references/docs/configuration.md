@@ -26,6 +26,7 @@ native executable and dedicated home null until the operator selects them.
 | `recorder` | `state_dir`, `helper_command`, `concurrency`, `max_jobs`, `timeout_ms`, `lease_ms`, `page_bytes`, `page_limit`, `stdout_bytes` | Recorder state commands and explicit `service once/run/start` |
 | `codex` | `executable`, `home`, `supervisor`, `semantic_worker`, `eval` | Explicit `auth` commands and `configuredAppServerOptions` / `runConfiguredAppServerTask` API |
 | `scoring` | `provider`, `model`, `api_key_env`, `limits` | Helper's explicit `prepare-score` / `score-prepared` workflow |
+| `agent_service` | Native-turn/worker/tool/round ceilings, deadline and prepared-data policy | Explicit native-agent activation and service commands |
 
 The deterministic recorder worker extracts local metadata and does not launch a
 model because a `codex` or `scoring` section exists. The optional native model API
@@ -57,6 +58,13 @@ startup materializes the effective settings into the child argv and does not
 reload a later modified config. Existing behavior without `--config` remains
 available. No conventional config path is searched automatically.
 
+An optional `--config-sha256 SHA256` pins the exact bytes read by the recorder's
+`--config` operation. The same bounded read is hashed before parsing; a mismatch
+fails before state access. This lets a native Hook bind a reviewed configuration
+without a separate check followed by an unverified reread. It is a byte digest,
+so whitespace changes require a newly reviewed digest. A matching digest grants
+no service, model or credential authority by itself.
+
 Unknown fields, duplicate JSON keys, wrong types, unsupported versions/models,
 inline credentials, endpoint overrides and fallback fields fail before use.
 Configuration input is bounded to 64 KiB and must be a regular, unaliased file;
@@ -64,6 +72,123 @@ symlinks and credential-like names such as `.env` and `auth.json` are refused.
 The recorder enforces `lease_ms > timeout_ms + 500`; parallel workers are bounded
 to 32. `config check` does not prove executable availability, provider access or
 native login. It reports environment variable names without reading their values.
+
+## Native agent service policy
+
+The optional `agent_service` section has finite defaults:
+
+```json
+{
+  "concurrency": 2,
+  "max_workers": 2,
+  "max_native_turns": 3,
+  "max_tool_calls": 64,
+  "deadline_ms": 180000,
+  "max_rounds": 2,
+  "data_policy": "metadata_only",
+  "external_score_max_calls": 0
+}
+```
+
+An activation freezes the resolved non-secret config, role models, task binding,
+prepared admissions and policy digest. Editing the original JSON cannot change
+that stored activation. `metadata_only` admits metadata to native model tools;
+`prepared_fragments` additionally permits owner-prepared, digest-bound synthetic
+or redacted fragments. Neither setting enables arbitrary RAW transport. A model
+cannot declare its own input sanitized or authorize a provider request.
+
+`max_native_turns` counts admitted native `turn/start` operations: one supervisor
+turn plus bounded worker turns. It does not count or independently limit hidden
+native HTTP retries or model requests made inside a turn for tool follow-up.
+Concurrency must not exceed `max_workers`, and `max_workers + 1` must fit the
+native-turn ceiling. Worker limits stop at 32, native turns at 33, tools at 256,
+the per-round deadline at five minutes, and activation rounds at 32. Durable
+activation totals derive from these finite per-round limits; an explicit retry
+consumes the existing totals rather than resetting them.
+
+External scoring defaults to zero. Enabling one external call requires a separate
+owner-admitted prepared packet, exact selected provider/model, a reserved attempt,
+and the selected key in the host process environment before activation or model
+startup. The service retains only that selected credential for the explicit
+scoring helper. Native Codex children, deterministic ETL helpers, stored snapshots,
+arguments and receipts do not receive its value. A missing key or conflicting
+provider selection fails explicitly. Hooks never read an `.env` file to recover a
+missing key. Precomputed admitted results remain usable with zero external calls.
+
+The standalone helper validates this section for shared-config compatibility; it
+does not activate a native Codex service. See [agent-supervisor-plan.md](agent-supervisor-plan.md)
+for the lifecycle and evidence boundaries.
+
+Initialize the recorder state and bind a source through the existing commands,
+then prepare an activation using `config/agent-activation.example.json` or the
+machine-readable schema. Select the actual binding ID and a stable daemon ID:
+
+```sh
+task-checkpoint-record schema agent-activation
+task-checkpoint-record agent activate --config "$PWD/task-checkpoint.json" \
+  --file "$PWD/agent-activation.json"
+task-checkpoint-record agent start --state /absolute/private/state --daemon example-daemon
+task-checkpoint-record agent status --state /absolute/private/state
+task-checkpoint-record agent jobs --state /absolute/private/state --limit 20
+task-checkpoint-record agent verify --state /absolute/private/state --run RUN_ID
+task-checkpoint-record agent resolve --state /absolute/private/state --link AGENT_TCR_LINK
+task-checkpoint-record agent stop --state /absolute/private/state --daemon example-daemon
+```
+
+`activate` records authority and finite policy without starting a daemon or a
+model. `include_existing_windows` defaults to false. `model_profile: "eval"`
+explicitly selects `codex.eval` for both supervisor and workers; production uses
+the two respective role settings. `agent run --state DIR --daemon ID` runs in
+the foreground; adding `--once true` performs one bounded cycle and closes its
+owned sessions. The native daemon also drains deterministic extraction only for
+its activated bindings and eligible windows, so no separate extraction daemon is
+required. Hook ingress queues work and never waits for a model or starts a
+daemon. Starting the native service is an explicit operation.
+
+Detached startup uses a private stdin acknowledgement. The child first registers
+`waiting_for_ack`; it cannot perform extraction, helper calls or native model work
+before the parent acknowledges that exact PID's fresh readiness record. A
+pre-acknowledgement timeout closes and reaps only the owned child. Parent EOF or
+an invalid nonce closes the waiting service. `--startup-timeout-ms` can bound the
+parent wait from 1 to 5000 ms; the default is 2000 ms.
+
+The `start_admitted` receipt requires observation of the same PID transitioning
+to `running` after acknowledgement. If delivery or that transition is uncertain,
+the result is `admitted_unknown` with the owned PID and no automatic retry. Work
+may already have started in that case; inspect `agent status` and `agent jobs`.
+Neither receipt is a claim that a task or checkpoint has completed.
+
+The optional activation `objective` carries the master's task purpose, bounded to
+4096 UTF-8 bytes. Its default asks for evidence-linked continuity guidance over
+the activated window. It is frozen into policy and supplied to the supervisor;
+changing the objective requires a new activation. Objective text cannot grant
+additional source access, tools, credentials, scoring attempts or model budget.
+
+A running daemon retains the set of immutable activations admitted at its start.
+After adding an activation, stop and restart that daemon before expecting it to
+perform native model work for the new admission. An activation's prepared packet has one reserved fresh
+attempt across its lifetime, including later windows and explicit retries. A
+precomputed packet uses `attempt_budget: 0` and a supplied verified result; a fresh
+packet uses `attempt_budget: 1`, no result, and a positive external-call policy.
+The current CLI accepts at most one packet per activation. It validates packet
+hashes and provider/model binding before inspecting the selected key. A daemon
+can retain only one selected provider/key namespace; conflicting admissions fail.
+
+`agent retry --state DIR --run ID` is explicit and never resets activation totals;
+up to three attempts remain bounded by the same total quotas. `agent cancel`
+requests cancellation of one job. `agent deactivate --state DIR --activation ID`
+disables an admission and requests cancellation of its owned work. `agent stop`
+stops the selected service without deleting records or credentials.
+
+Stop review is advisory by default. Explicit `stop.mode: "strict_once"` can
+request one continuation only from an already completed, fresh review of the
+same binding, native turn and observed source bounds. An eligible prior window
+with equal bounds may supply the cache; changed bounds cannot. Pending, missing or stale reviews
+never cause model waiting. Current Claude/Pi callback mappings lack a native
+turn identity for this gate and remain advisory. `agent verify` also accepts
+`--binding ID --window ID [--turn ID]` to inspect that cached state; an explicit
+`--consume-strict true` consumes the one-shot guard. A proposal, digest check or
+continuation request is not an owner's formal checkpoint or task acceptance.
 
 ## Provider keys and prepared scoring
 
@@ -89,12 +214,16 @@ included in `config/`. A custom key variable name may be selected, but the value
 belongs only in the executing process environment supplied by the operator's
 secret manager. Do not write API-key values into JSON, shell command arguments,
 Git, model inputs or reports. The application does not load an `.env` file.
+Credential references may use ordinary uppercase variable names. Runtime,
+preload, profile and routing variables such as `BUN_OPTIONS`, `NODE_OPTIONS`,
+`HOME`, `CODEX_HOME` and `HTTPS_PROXY` are rejected as key references.
 
-Official launchers and the container run Bun with `--no-env-file`; Node's helper
-launcher does not load dotenv. A caller bypassing these launchers must preserve
-that boundary, for example `bun --no-env-file src/cli.ts …`. Runtime preload
-options or an operator-provided shell can still inject environment variables;
-configuration parsing itself never reads credentials.
+Official launchers and the container run Bun with the package's canonical
+`--config=ABSOLUTE_PATH`, `--no-env-file` and `--no-install`, and remove ambient
+preload controls before the interpreter starts. Node's helper launcher does not
+load dotenv. Use `bin/task-checkpoint-record` in a source checkout; bypassing the
+launcher requires preserving those same boundaries. Configuration parsing itself
+never reads credentials.
 
 Prepare synthetic or deliberately redacted text separately. Preparation is local;
 scoring is an explicit external request. The packet binds the selected provider

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "task-checkpoint-record",
+  "version": "0.1.0",
+  "description": "Client hooks and task checkpoint workflows; explicit configuration and activation required.",
+  "license": "MIT"
+}

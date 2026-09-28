@@ -1,7 +1,7 @@
 {
   "name": "task-checkpoint-record",
   "version": "0.1.0",
-  "description": "Private local task checkpoint metadata, leased extraction jobs and exact recall",
+  "description": "Local task checkpoints, bounded native supervision, helper tools and exact recall",
   "type": "module",
   "bin": {
     "task-checkpoint-record": "bin/task-checkpoint-record"
@@ -46,6 +46,11 @@
     "./config": "./src/config.ts",
     "./configured-runtime": "./src/config-runtime.ts",
     "./appserver": "./src/appserver.ts",
-    "./store": "./src/store.ts"
+    "./store": "./src/store.ts",
+    "./agent-runtime": "./src/agent-runtime.ts",
+    "./agent-config": "./src/agent-config.ts",
+    "./agent-service": "./src/supervisor.ts",
+    "./agent-store": "./src/supervisor-store.ts",
+    "./ptc-tools": "./src/ptc-tools.ts"
   }
 }

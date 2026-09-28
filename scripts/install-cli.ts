@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
 export const OWNER = "task-checkpoint-record.cli.v1";
+export const BUN_CONFIG_RELATIVE = "config/runtime.bunfig.toml";
 const COMMANDS = ["task-checkpoint-record", "ultrafast-atif-helper"] as const;
 const CAP = 8 * 1024 * 1024;
 export class InstallError extends Error { constructor(readonly code: string) { super(code); } }
@@ -154,6 +155,8 @@ export type Manifest = {
   schema_version: "task-checkpoint-record.install-manifest.v1"; owner: string;
   sources: { name: string; root: string; version: string; files: FileEntry[] }[];
   runtimes: { bun: Runtime; node: Runtime }; files: FileEntry[];
+  /** Absent only on legacy manifests retained for inspection and rollback. */
+  bun_config_path?: typeof BUN_CONFIG_RELATIVE;
   help_checks: { name: string; stdout_sha256: string; exit_code: 0 }[];
   distribution?: { manifest_sha256: string; release: ReleaseBundle; installed_licenses: { recorder: string; helper: string } };
 };
@@ -230,7 +233,7 @@ export function verifyReleaseBundle(root: string, expectedManifestSha: string): 
 }
 function source(root: string, name: string) {
   ownedDirectory(root); const pkg = json(join(root, "package.json")); if (pkg.name !== name) fail("source_package_mismatch");
-  const files = ["package.json", "tsconfig.json", ...(name === "task-checkpoint-record" ? ["bin/task-checkpoint-record"] : ["bin/ultrafast-atif-helper.mjs"])].map(path => ({ path, sha256: fileHash(join(root, path)), mode: lstatSync(join(root, path)).mode & 0o777 }));
+  const files = ["package.json", "tsconfig.json", ...(name === "task-checkpoint-record" ? ["bin/task-checkpoint-record", BUN_CONFIG_RELATIVE] : ["bin/ultrafast-atif-helper.mjs"])].map(path => ({ path, sha256: fileHash(join(root, path)), mode: lstatSync(join(root, path)).mode & 0o777 }));
   files.push(...fileList(join(root, "src")).map(f => ({ ...f, path: `src/${f.path}` })));
   for (const path of ["bun.lock", "package-lock.json"]) if (stat(join(root, path))) files.push({ path, sha256: fileHash(join(root, path)), mode: lstatSync(join(root, path)).mode & 0o777 });
   return { name, root, version: string(pkg.version), files: files.sort((a, b) => a.path.localeCompare(b.path)) };
@@ -240,9 +243,10 @@ function run(executable: string, args: string[], cwd: string): string {
     env: { PATH: dirname(executable), LANG: "C.UTF-8", TASK_CHECKPOINT_RECORD_ROLE: "observer" } });
   if (r.error || r.status !== 0) fail("build_or_probe_failed"); return r.stdout;
 }
-function runtime(path: string, isBun = false): Runtime {
+function bunFlags(configPath: string): string[] { return ["--no-env-file", "--no-install", `--config=${configPath}`]; }
+function runtime(path: string, bunConfig?: string): Runtime {
   safePath(path); if (!(lstatSync(path).mode & 0o111)) fail("runtime_not_executable");
-  return { path, sha256: fileHash(path), version: string(run(path, [...(isBun ? ["--no-env-file"] : []), "--version"], dirname(path)).trim()) };
+  return { path, sha256: fileHash(path), version: string(run(path, [...(bunConfig ? bunFlags(bunConfig) : []), "--version"], dirname(path)).trim()) };
 }
 export function snapshot(p: string): Snapshot {
   safePath(p, true); if (!stat(p)) return { exists: false, sha256: null, bytes: null, mode: null };
@@ -257,11 +261,16 @@ function currentPath(prefix: string) { return join(rootOf(prefix), "current.json
 function ownerBytes() { return canonical({ schema_version: "task-checkpoint-record.install-owner.v1", owner: OWNER }) + "\n"; }
 export function artifactCommand(manifestPath: string, name: typeof COMMANDS[number]): string[] {
   const manifest = verifyManifest(manifestPath), dir = dirname(manifestPath);
-  return name === "task-checkpoint-record" ? [manifest.runtimes.bun.path, "--no-env-file", join(dir, "record", "cli.mjs")] : [manifest.runtimes.node.path, join(dir, "helper", "bin", "ultrafast-atif-helper.mjs")];
+  if (name === "task-checkpoint-record") {
+    if (manifest.bun_config_path !== BUN_CONFIG_RELATIVE) fail("bun_runtime_config_required");
+    return ["/usr/bin/env", "-u", "BUN_OPTIONS", manifest.runtimes.bun.path, ...bunFlags(join(dir, BUN_CONFIG_RELATIVE)), join(dir, "record", "cli.mjs")];
+  }
+  return [manifest.runtimes.node.path, join(dir, "helper", "bin", "ultrafast-atif-helper.mjs")];
 }
 function launcher(manifest: Manifest, directory: string, name: typeof COMMANDS[number]): string {
-  const argv = name === "task-checkpoint-record" ? [manifest.runtimes.bun.path, "--no-env-file", join(directory, "record", "cli.mjs")] : [manifest.runtimes.node.path, join(directory, "helper", "bin", "ultrafast-atif-helper.mjs")];
-  return `#!/bin/sh\n# Owned by ${OWNER}; verify with scripts/install-cli.ts\nexec ${argv.map(shellQuote).join(" ")} "$@"\n`;
+  const hardened = name === "task-checkpoint-record" && manifest.bun_config_path === BUN_CONFIG_RELATIVE;
+  const argv = name === "task-checkpoint-record" ? [manifest.runtimes.bun.path, ...(hardened ? bunFlags(join(directory, BUN_CONFIG_RELATIVE)) : ["--no-env-file"]), join(directory, "record", "cli.mjs")] : [manifest.runtimes.node.path, join(directory, "helper", "bin", "ultrafast-atif-helper.mjs")];
+  return `#!/bin/sh\n# Owned by ${OWNER}; verify with scripts/install-cli.ts\n${hardened ? "unset BUN_OPTIONS\n" : ""}exec ${argv.map(shellQuote).join(" ")} "$@"\n`;
 }
 function validateManifest(m: any): asserts m is Manifest {
   if (m?.schema_version !== "task-checkpoint-record.install-manifest.v1" || m.owner !== OWNER || !Array.isArray(m.files) || !m.files.length || m.files.length > 4096) fail("invalid_manifest");
@@ -270,6 +279,7 @@ function validateManifest(m: any): asserts m is Manifest {
     string(f.path); if (isAbsolute(f.path) || f.path.includes("\\") || f.path.split("/").some((s: string) => !s || s === "." || s === "..") || f.path === "manifest.json" || seen.has(f.path)) fail("invalid_artifact_path");
     seen.add(f.path); if (!/^[a-f0-9]{64}$/.test(f.sha256) || ![0o600, 0o644, 0o700, 0o755].includes(f.mode)) fail("invalid_artifact_metadata");
   }
+  if (m.bun_config_path !== undefined && (m.bun_config_path !== BUN_CONFIG_RELATIVE || !seen.has(BUN_CONFIG_RELATIVE))) fail("invalid_bun_runtime_config");
   for (const name of ["bun", "node"] as const) { const r = m.runtimes?.[name]; absolute(r?.path); if (!/^[a-f0-9]{64}$/.test(r.sha256)) fail("invalid_runtime"); }
 }
 export function verifyManifest(manifestPath: string): Manifest {
@@ -309,6 +319,7 @@ function before(prefix: string): InstallPlan["before"] {
 export function planBuiltArtifacts(stage: string, prefix: string, manifest: Manifest): InstallPlan {
   // Exported for offline packagers/tests; caller must provide a separately reviewed artifact manifest.
   ownedDirectory(stage); validateManifest(manifest);
+  if (manifest.bun_config_path !== BUN_CONFIG_RELATIVE) fail("bun_runtime_config_required");
   if (canonical(fileList(stage)) !== canonical(manifest.files)) fail("artifact_changed");
   const preconditions = before(prefix); writeNew(join(stage, "manifest.json"), canonical(manifest) + "\n");
   return { schema_version: "task-checkpoint-record.install-plan.v1", owner: OWNER, plan_only: true, stage, prefix, version_id: sha(canonical(manifest)), manifest, before: preconditions };
@@ -327,11 +338,12 @@ function prepareSources(o: BuildOptions, distribution?: Manifest["distribution"]
   for (const p of Object.values(o)) absolute(p); before(o.prefix); safePath(o.stage, true);
   if (stat(o.stage)) fail("stage_must_be_new"); ownedDirectory(dirname(o.stage));
   const sources = [source(o.recordRepo, COMMANDS[0]), source(o.helperRepo, COMMANDS[1])];
-  const runtimes = { bun: runtime(o.bun, true), node: runtime(o.node) };
+  const runtimes = { bun: runtime(o.bun, join(o.recordRepo, BUN_CONFIG_RELATIVE)), node: runtime(o.node) };
   mkdirSync(o.stage, { mode: 0o700 });
-  for (const path of ["record", "helper", "helper/bin", "helper/dist", "helper/dist/helper"]) mkdirSync(join(o.stage, path), { mode: 0o700 });
-  run(o.bun, ["--no-env-file", "build", join(o.recordRepo, "src/cli.ts"), "--target=bun", "--outfile", join(o.stage, "record/cli.mjs")], o.stage);
-  run(o.bun, ["--no-env-file", "build", join(o.helperRepo, "src/helper/cli.ts"), "--target=node", "--outfile", join(o.stage, "helper/dist/helper/cli.js")], o.stage);
+  for (const path of ["config", "record", "helper", "helper/bin", "helper/dist", "helper/dist/helper"]) mkdirSync(join(o.stage, path), { mode: 0o700 });
+  writeNew(join(o.stage, BUN_CONFIG_RELATIVE), readSafe(join(o.recordRepo, BUN_CONFIG_RELATIVE)), 0o644);
+  run(o.bun, [...bunFlags(join(o.stage, BUN_CONFIG_RELATIVE)), "build", join(o.recordRepo, "src/cli.ts"), "--target=bun", "--outfile", join(o.stage, "record/cli.mjs")], o.stage);
+  run(o.bun, [...bunFlags(join(o.stage, BUN_CONFIG_RELATIVE)), "build", join(o.helperRepo, "src/helper/cli.ts"), "--target=node", "--outfile", join(o.stage, "helper/dist/helper/cli.js")], o.stage);
   writeNew(join(o.stage, "helper/bin/ultrafast-atif-helper.mjs"), readSafe(join(o.helperRepo, "bin/ultrafast-atif-helper.mjs")), 0o644);
   writeNew(join(o.stage, "helper/package.json"), canonical({ name: sources[1].name, version: sources[1].version, type: "module" }) + "\n", 0o644);
   if (distribution) {
@@ -340,14 +352,14 @@ function prepareSources(o: BuildOptions, distribution?: Manifest["distribution"]
     writeNew(join(o.stage, "release-bundle.json"), readSafe(join(o.recordRepo, "release-bundle.json")), 0o644);
   }
   const helpChecks = COMMANDS.map(name => {
-    const argv = name === COMMANDS[0] ? [o.bun, "--no-env-file", join(o.stage, "record/cli.mjs")] : [o.node, join(o.stage, "helper/bin/ultrafast-atif-helper.mjs")];
+    const argv = name === COMMANDS[0] ? [o.bun, ...bunFlags(join(o.stage, BUN_CONFIG_RELATIVE)), join(o.stage, "record/cli.mjs")] : [o.node, join(o.stage, "helper/bin/ultrafast-atif-helper.mjs")];
     const stdout = run(argv[0], [...argv.slice(1), "--help"], o.stage); const parsed = JSON.parse(stdout);
     if (!parsed.commands || (name === COMMANDS[0] ? parsed.name !== name : parsed.schema_version !== "ultrafast-atif.cli.v1")) fail("help_contract_mismatch");
     return { name, stdout_sha256: sha(stdout), exit_code: 0 as const };
   });
   if (canonical(sources) !== canonical([source(o.recordRepo, COMMANDS[0]), source(o.helperRepo, COMMANDS[1])])) fail("source_changed_during_build");
   if (distribution && canonical(verifyReleaseBundle(o.recordRepo, distribution.manifest_sha256)) !== canonical(distribution.release)) fail("release_changed_during_build");
-  return planBuiltArtifacts(o.stage, o.prefix, { schema_version: "task-checkpoint-record.install-manifest.v1", owner: OWNER, sources, runtimes, files: fileList(o.stage), help_checks: helpChecks, ...(distribution ? { distribution } : {}) });
+  return planBuiltArtifacts(o.stage, o.prefix, { schema_version: "task-checkpoint-record.install-manifest.v1", owner: OWNER, sources, runtimes, bun_config_path: BUN_CONFIG_RELATIVE, files: fileList(o.stage), help_checks: helpChecks, ...(distribution ? { distribution } : {}) });
 }
 function validatePlan(p: any): asserts p is InstallPlan {
   if (p?.schema_version !== "task-checkpoint-record.install-plan.v1" || p.owner !== OWNER || p.plan_only !== true) fail("invalid_plan");
@@ -368,7 +380,9 @@ function lock<T>(prefix: string, fn: () => T): T {
   try { return fn(); } finally { unlinkSync(p); }
 }
 export function applyPlan(plan: InstallPlan): any {
-  validatePlan(plan); return lock(plan.prefix, () => {
+  validatePlan(plan);
+  if (plan.manifest.bun_config_path !== BUN_CONFIG_RELATIVE) fail("bun_runtime_config_required");
+  return lock(plan.prefix, () => {
     const root = rootOf(plan.prefix), dir = join(root, "versions", plan.version_id);
     const desiredCommands = Object.fromEntries(COMMANDS.map(name => [name, asSnapshot(launcher(plan.manifest, dir, name), 0o755)]));
     const desiredCurrent = asSnapshot(canonical({ schema_version: "task-checkpoint-record.current-install.v1", owner: OWNER, version_id: plan.version_id,

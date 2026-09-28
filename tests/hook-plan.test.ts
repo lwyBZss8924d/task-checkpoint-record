@@ -4,19 +4,20 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { OWNER, ReceiptOperationError, applyPlan, fileHash, planBuiltArtifacts, sha, withReceipt, type Manifest } from "../scripts/install-cli.ts";
+import { BUN_CONFIG_RELATIVE, OWNER, ReceiptOperationError, applyPlan, fileHash, planBuiltArtifacts, sha, withReceipt, type Manifest } from "../scripts/install-cli.ts";
 import { applyHookPlan, createHookPlan, mergeHooks, rollbackHooks, verifyHookPlan } from "../scripts/hook-plan.ts";
 import { registerTaskCheckpointRecord } from "../integrations/pi/task-checkpoint-record.v1.ts";
 
 const roots: string[] = [];
 function setup(client: "codex" | "claude" = "codex") {
   const p = realpathSync(mkdtempSync(join(tmpdir(), "tcr-hook-plan-"))); roots.push(p);
-  for (const d of ["bin", "stage", "stage/record", "state", "profile"]) mkdirSync(join(p, d), { mode: 0o700 });
+  for (const d of ["bin", "stage", "stage/record", "stage/config", "state", "profile"]) mkdirSync(join(p, d), { mode: 0o700 });
   const runtime = join(p, "runtime"); writeFileSync(runtime, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
   const artifact = join(p, "stage/record/cli.mjs"); writeFileSync(artifact, "// synthetic\n", { mode: 0o600 });
+  const runtimeConfig = join(p, "stage", BUN_CONFIG_RELATIVE); writeFileSync(runtimeConfig, "# Synthetic owned runtime config.\n", { mode: 0o644 });
   const r = { path: runtime, sha256: fileHash(runtime), version: "synthetic" };
-  const manifest: Manifest = { schema_version: "task-checkpoint-record.install-manifest.v1", owner: OWNER, sources: [], runtimes: { bun: r, node: r },
-    files: [{ path: "record/cli.mjs", sha256: fileHash(artifact), mode: 0o600 }], help_checks: [] };
+  const manifest: Manifest = { schema_version: "task-checkpoint-record.install-manifest.v1", owner: OWNER, sources: [], runtimes: { bun: r, node: r }, bun_config_path: BUN_CONFIG_RELATIVE,
+    files: [{ path: BUN_CONFIG_RELATIVE, sha256: fileHash(runtimeConfig), mode: 0o644 }, { path: "record/cli.mjs", sha256: fileHash(artifact), mode: 0o600 }], help_checks: [] };
   const installed = planBuiltArtifacts(join(p, "stage"), join(p, "bin"), manifest); applyPlan(installed);
   const original = JSON.stringify({ permissions: { allow: ["Read"] }, unrelated: { nested: true }, hooks: {
     SessionStart: [{ matcher: "resume", hooks: [{ type: "command", command: "foreign-start", timeout: 30 }] }],

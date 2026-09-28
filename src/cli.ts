@@ -9,6 +9,9 @@ import { schema } from "./schemas.ts";
 import type { WorkerOptions } from "./types.ts";
 import { ConfigurationError, checkConfigReport, configSchema, loadConfig, writeConfig, type DecisionProvider, type PortableConfig } from "./config.ts";
 import { authPlan, setupAuth, runAuth } from "./config-runtime.ts";
+import { bunRuntimeFlags } from "./bun-runtime.ts";
+import { agentActivationSchema } from "./agent-config.ts";
+import { agentHookOutput } from "./agent-hook.ts";
 
 const HELP={
   name:"task-checkpoint-record",version:"0.1.0",schema_version:"task-checkpoint-record.help.v1",
@@ -20,7 +23,7 @@ const HELP={
     "auth setup":"--config JSON --plan-sha256 SHA; create reviewed new profile only, never copy credentials",
     "auth login":"--config JSON; explicit official codex login --device-auth with dedicated CODEX_HOME, inherited terminal",
     "auth status":"--config JSON; official codex login status, no authentication-file reads by this wrapper",
-    "schema":"binding|query|helper-page; JSON Schema without state creation",
+    "schema":"binding|query|helper-page|agent-activation; JSON Schema without state creation",
     "init":"--state ABS_DIR; creates private SQLite state only",
     "bind":"--state ABS_DIR --file ABS_BINDING_JSON; immutable explicit task/session/source binding",
     "unbind":"--state ABS_DIR --binding ID; disables new ingestion; keeps existing evidence",
@@ -30,13 +33,24 @@ const HELP={
     "service start":"same options; explicit detached worker start; never runs implicitly from a hook",
     "service stop":"--state ABS_DIR; requests cooperative stop, active bounded extraction finishes",
     "service status":"--state ABS_DIR; read existing status, no start",
+    "agent activate":"--config JSON --file ABS_ADMISSION_JSON; freeze one task admission and finite native policy, no daemon start",
+    "agent status":"--state ABS_DIR; bounded activation/service/job metadata, no startup",
+    "agent jobs":"--state ABS_DIR [--activation ID --job-state STATE --limit 20 --offset 0]; bounded native-job metadata",
+    "agent resolve":"--state ABS_DIR --link tcr://STORE/KIND/ID [--fields FIELD,...]; KIND is agent-proposals|agent-evidence|agent-runs; bounded stored metadata, no URI following",
+    "agent run":"--state ABS_DIR --daemon ID [--once true]; explicit foreground native supervisor/worker service",
+    "agent start":"--state ABS_DIR --daemon ID [--startup-timeout-ms 2000]; explicit detached native service with owned readiness/ack handshake",
+    "agent stop":"--state ABS_DIR --daemon ID; cooperative owned native service shutdown",
+    "agent deactivate":"--state ABS_DIR --activation ID; deactivate admission and request owned work cancellation",
+    "agent retry":"--state ABS_DIR --run ID; explicit retry within existing durable activation budgets",
+    "agent cancel":"--state ABS_DIR --run ID; request cancellation of one native job",
+    "agent verify":"--state ABS_DIR --run ID, or --binding ID --window ID [--turn ID --consume-strict true]; cached provenance/review only, never model acceptance",
     "query":"--state ABS_DIR --kind records|events|windows|checkpoints [--filter KEY=VALUE] [--fields FIELD,... --limit 20 --offset 0]",
     "resolve":"--state ABS_DIR --link tcr://STORE/KIND/ID [--fields FIELD,...]; store metadata only, no source following",
     "recall":"--state ABS_DIR --binding ID; cached body-free windows and job states",
     "checkpoint import":"--state ABS_DIR --binding ID --file ABS_EVENT_JSON; explicit envelope/binding validation level, pointers never followed",
     "retry":"--state ABS_DIR --job ID; explicit retry of one failed job"
   },
-  invariants:["No RAW bodies in default outputs","No implicit daemon or model startup","Observer/worker hooks are inert","Native IDs are never invented from hook context","Stop is advisory; no strict gate in this release","SQLite is application storage with OTel correlation potential, not an OTel collector"]
+  invariants:["No RAW bodies in default outputs","No implicit daemon or model startup","Observer/worker hooks are inert","Native IDs are never invented from hook context","Stop defaults to advisory; explicit strict_once uses only a fresh exact-turn cached review once","SQLite is application storage with OTel correlation potential, not an OTel collector"]
 };
 type Args={words:string[];opts:Map<string,string[]>};
 function argumentsOf(argv:string[]):Args{
@@ -57,7 +71,7 @@ function option(args:Args,key:string,required=false):string|undefined{
   const value=args.opts.get(key)?.[0];if(required&&value===undefined)fail("missing_option");return value;
 }
 function allowed(args:Args,names:string[]):void{
-  for(const key of args.opts.keys())if(!["state","config","json",...names].includes(key))fail("unknown_option");
+  for(const key of args.opts.keys())if(!["state","config","config-sha256","json",...names].includes(key))fail("unknown_option");
 }
 function number(args:Args,key:string,fallback:number):number{
   const raw=option(args,key);if(raw===undefined)return fallback;if(!/^(0|[1-9][0-9]*)$/.test(raw))fail("invalid_integer");return integer(Number(raw),0,Number.MAX_SAFE_INTEGER);
@@ -86,14 +100,15 @@ export async function main(argv:string[]):Promise<void>{
   try{
     const args=argumentsOf(argv);const command=args.words.join(" ");nativeHook=command==="hook";
     if(command==="help"||command===""||args.words.includes("help")){output(HELP);return;}
-    if(args.words[0]==="schema"&&args.words.length===2){allowed(args,[]);output(schema(args.words[1]));return;}
+    if(args.words[0]==="schema"&&args.words.length===2){allowed(args,[]);output(args.words[1]==="agent-activation"?agentActivationSchema():schema(args.words[1]));return;}
     if(command==="config schema"){allowed(args,[]);output(configSchema());return;}
     if(command==="config init"){
-      allowed(args,["file","provider"]);if(args.opts.has("config")||args.opts.has("state"))fail("conflicting_option");
+      allowed(args,["file","provider"]);if(args.opts.has("config")||args.opts.has("config-sha256")||args.opts.has("state"))fail("conflicting_option");
       const file=option(args,"file",true)!;const provider=option(args,"provider")??"openrouter";
       writeConfig(file,provider as DecisionProvider);output({schema_version:"task-checkpoint.config-created.v1",file:resolve(file),credentials_written:false,model_called:false});return;
     }
-    const config=option(args,"config")?loadConfig(option(args,"config")!):undefined;
+    if(option(args,"config-sha256")&&!option(args,"config"))fail("config_required_for_digest");
+    const config=option(args,"config")?loadConfig(option(args,"config")!,option(args,"config-sha256")):undefined;
     if(command==="config check"){allowed(args,[]);if(!config)fail("config_required");output(checkConfigReport(config));return;}
     if(command.startsWith("auth ")){
       if(!config)fail("config_required");
@@ -109,9 +124,13 @@ export async function main(argv:string[]):Promise<void>{
       const client=option(args,"client",true),profile=option(args,"profile",true);
       const input=await stdinJSON();store=new Store(state,{busyMs:25});
       const result=handleHook(store,client,profile,input,process.env.TASK_CHECKPOINT_RECORD_ROLE??(process.env.TASK_CHECKPOINT_RECORD_WORKER==="1"?"worker":undefined));
-      output(result.output);return;
+      output(agentHookOutput(store,result,client!,input));return;
     }
     store=new Store(state);
+    if(command.startsWith("agent ")){
+      const {agentCommand}=await import("./agent-cli.ts");
+      output(await agentCommand({command,options:args.opts,store,config,cliEntrypoint:fileURLToPath(import.meta.url)}));return;
+    }
     switch(command){
       case "bind":allowed(args,["file"]);output(store.bind(parseJson(readFileBounded(absolute(option(args,"file",true)),64*1024).toString("utf8"))));break;
       case "unbind":allowed(args,["binding"]);output({disabled:store.unbind(option(args,"binding",true)!)});break;
@@ -126,7 +145,7 @@ export async function main(argv:string[]):Promise<void>{
       }
       case "service start":{
         allowed(args,WORKER_FLAGS);const effective=workerOptions(options(args,config));
-        const childArgs=["--no-env-file",fileURLToPath(import.meta.url),"--state",state,"service","run"];
+        const childArgs=[...bunRuntimeFlags(),fileURLToPath(import.meta.url),"--state",state,"service","run"];
         childArgs.push("--helper",effective.helper[0]);for(const value of effective.helper.slice(1))childArgs.push("--helper-arg",value);
         for(const [flag,value] of Object.entries({concurrency:effective.concurrency,"max-jobs":effective.maxJobs,"timeout-ms":effective.timeoutMs,"lease-ms":effective.leaseMs,"page-bytes":effective.pageBytes,"page-limit":effective.pageLimit,"stdout-bytes":effective.stdoutBytes}))childArgs.push("--"+flag,String(value));
         const child=spawn(process.execPath,childArgs,{detached:true,stdio:"ignore",env:childEnvironment("observer")});

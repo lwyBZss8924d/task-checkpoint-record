@@ -59,7 +59,7 @@ function within(root: string, path: string): boolean {
 }
 
 /** Does not create a home or inspect credentials. Resolving an alias cannot select another login. */
-async function verifyPaths(options: AppServerTaskOptions<unknown>): Promise<{ codexHome: string; cwd: string }> {
+async function verifyPaths(options: Pick<AppServerTaskOptions<unknown>, "codexExecutable" | "codexHome" | "cwd">): Promise<{ codexHome: string; cwd: string }> {
   for (const p of [options.codexExecutable, options.codexHome, options.cwd]) {
     if (typeof p !== "string" || !isAbsolute(p) || p.includes("\0")) fail("absolute_paths_required");
   }
@@ -121,6 +121,9 @@ class Connection {
   private rejectFatal!: (e: Error) => void;
   readonly fatal = new Promise<never>((_, reject) => { this.rejectFatal = reject; });
   onNotification: (method: string, params: Obj) => void = () => {};
+  /** Opt-in only for the separate native-agent runtime. Text-only tasks leave this unset. */
+  onServerRequest?: (method: string, params: Obj, id: RpcId) => Promise<Obj>;
+  private serverRequests = new Set<RpcId>();
 
   constructor(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, private bounds: Bounds) {
     this.fatal.catch(() => {});
@@ -144,6 +147,7 @@ class Connection {
     this.pending.clear(); this.rejectFatal(this.error);
   }
   assertHealthy(): void { if (this.error) throw this.error; }
+  get pendingServerRequests(): number { return this.serverRequests.size; }
   private write(value: Obj): void {
     if (this.error) throw this.error;
     const line = serialized(value, this.bounds.maxInputBytes + 65536) + "\n";
@@ -179,6 +183,21 @@ class Connection {
         if (!obj(value)) return this.abort("invalid_rpc_message");
         if (typeof value.method === "string") {
           if (value.id !== undefined) {
+            if (this.onServerRequest && (typeof value.id === "string" || typeof value.id === "number") && obj(value.params)) {
+              const id = value.id;
+              if (typeof id === "string" ? !id || id.length > 256 || /[\u0000-\u001f\u007f]/u.test(id) : !Number.isSafeInteger(id)) return this.abort("invalid_server_request_id");
+              if (this.serverRequests.has(id) || this.serverRequests.size >= 32) return this.abort("server_request_limit");
+              this.serverRequests.add(id);
+              Promise.resolve(this.onServerRequest(value.method, value.params, id)).then(result => {
+                this.write({ id, result });
+              }).catch(error => {
+                if (!this.error) {
+                  try { this.write({ id, error: { code: -32602, message: "Host request rejected" } }); } catch {}
+                  this.abort(error instanceof AppServerError ? error.code : "server_request_rejected");
+                }
+              }).finally(() => this.serverRequests.delete(id));
+              continue;
+            }
             // No approval, login refresh, dynamic tool, elicitation or arbitrary server request is accepted.
             if (typeof value.id === "string" || typeof value.id === "number") {
               this.write({ id: value.id, error: { code: -32601, message: "Host requests disabled by record adapter" } });
@@ -379,3 +398,7 @@ export async function runAppServerTask<T>(options: AppServerTaskOptions<T>): Pro
 
 export const runSupervisor = <T>(options: AppServerTaskOptions<T>): Promise<AppServerTaskResult<T>> =>
   runAppServerTask({ ...options, role: options.role ?? "supervisor" });
+
+/** Internal transport reuse; the supported text-only front door retains its default-deny policy. */
+export { Connection as AppServerConnection, verifyPaths as verifyAppServerPaths,
+  childEnvironment as appServerEnvironment, safeUsage as parseAppServerUsage };

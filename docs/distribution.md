@@ -2,9 +2,10 @@
 
 This repository contains its CLI/API source, contracts, package Skills, a portable
 `plugin.json`, a Codex compatibility manifest, offline checks, and container input
-pins. A plugin installation supplies the Skills in `skills/`; installing the CLI,
-authenticating, binding a task, applying a Hook plan, and starting a worker remain
-explicit operations. There is no bundled active Hook, MCP server or model call.
+pins. The Skills-only plugin supplies the workflows in `skills/`; separate full
+Codex/Claude artifacts also supply native Hooks and Claude commands. Installing
+the CLI, authenticating, binding a task, enabling/trusting Hooks and starting a
+worker remain explicit operations. Builds and imports perform no model call.
 
 The compatibility manifest follows the supported `plugin-creator` layout. Current
 [OpenAI plugin packaging guidance](https://developers.openai.com/plugins/build/plugins)
@@ -29,7 +30,8 @@ and the helper-page protocol. A second checkout is not needed. Check the release
 checksums, unpack the bundle into a new directory, then use the contained installer:
 
 ```sh
-bun --no-env-file scripts/install-cli.ts bundle-plan \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install \
+  --config="$PWD/config/runtime.bunfig.toml" scripts/install-cli.ts bundle-plan \
   --bundle-root /absolute/unpacked-bundle \
   --bundle-sha256 REVIEWED_RELEASE_MANIFEST_SHA256 \
   --prefix /absolute/existing-bin-directory --stage /absolute/new-stage \
@@ -89,6 +91,39 @@ public Plugins Directory. No build command edits a personal marketplace or accou
 The following separate component source/plugin archive command remains useful
 for source review and plugin-only distribution.
 
+## Native client plugin artifacts
+
+The Skills suite supplies reusable workflows. Native Codex and Claude Code client
+plugins are separate explicit artifacts assembled with their reviewed overlays,
+native Hooks, client Skill and Claude slash commands. Each contains recorder source
+under `runtime/recorder/`, helper source plus an offline-built Node CLI under
+`runtime/helper/`, both licenses, and `client-package.json` with exact source and
+payload digests. The existing core bundle format is preserved.
+
+After extracting and verifying the exact committed core bundle:
+
+```sh
+python3 scripts/distribution/client-plugins.py \
+  --bundle-root /absolute/verified-core-bundle \
+  --bundle-sha256 REVIEWED_RELEASE_MANIFEST_SHA256 \
+  --bun /absolute/bun-1.3.14 \
+  --output /absolute/new-client-artifacts
+```
+
+The compiler uses the bundle's owned `config/runtime.bunfig.toml`, disables dotenv
+and automatic dependency installation, and strips inherited interpreter options.
+It neither installs a plugin nor calls a model. Outputs include each client ZIP,
+detached inventory, self-hosted marketplace ZIP and checksums. Codex and Claude
+catalogs use their native formats; keep them separate.
+
+Install an assembled client artifact and follow its bundled
+`runtime/recorder/docs/client-plugins.md`. Configure the explicit enable switch,
+canonical config path, config byte digest and source profile before expecting an
+admission callback. The service remains an explicit operation. Select the contained
+helper entry in `recorder.helper_command`; the general template's global CLI default
+does not identify this plugin's payload. Package validation, observed native Hook
+delivery, model work and formal owner checkpoint acceptance remain distinct.
+
 From this repository, after dependency installation:
 
 ```sh
@@ -147,7 +182,7 @@ input digest. The primary `.dockerignore` is deny-by-default and only admits the
 runtime build inputs. Normal builds use the frozen Codex release. The opt-in
 `codex-compatibility.yml` workflow resolves the latest official stable release into
 a separate temporary lock and checks its version/help/protocol-schema surface.
-It checks 14 used RPC schema files and 93 structural field fragments, and rejects
+It checks 18 used RPC schema files and 113 structural field fragments, and rejects
 an unreviewed version before reporting success. The version authority is the
 adapter's `SUPPORTED_CODEX_VERSIONS` tuple; contract drift also fails. That result
 is not an authenticated live-model evaluation and does not rewrite pins.
@@ -209,11 +244,12 @@ docker run --rm --network none \
 ```
 
 No listener is exposed, and the container's default command is `--help`. App-server
-review is an explicitly invoked library API; `service run` is the deterministic
-ETL worker and does not silently turn into a model supervisor. Native callbacks in
+review uses explicit `agent activate` and `agent start/run` operations, or the
+separate prepared-input library API. `service run` remains the deterministic
+ETL worker. Native callbacks in
 another container or on the host require an explicit shared-store/adapter plan;
 installing this image does not wire or start them. See [installation](installation.md)
-and [the runtime contract](app-server-runtime.md).
+and [the agent service](agent-service.md).
 
 ## Compatibility evidence
 

@@ -15,9 +15,18 @@ private source traces and runtime identities are deliberately excluded.
 | Installing or rolling back | Validate output destinations and the complete target closure before effects | A failed receipt or changed retired runtime can leave an unrecorded or broken installation |
 | Claiming version compatibility | Pin the actual executable and consumed protocol fields | A supported version in a user-agent suffix does not identify the running build |
 | Publishing a multi-package release | Build from exact committed trees and verify the combined payload | Working-tree tests do not bind the content users actually install |
+| Launching a Bun Hook from an arbitrary project | Pin the package runtime configuration and suppress inherited preload controls before entering application code | Disabling dotenv alone still permits a caller's Bun preload to execute before an inert guard |
+| Selecting a credential environment reference | Reject interpreter, loader and native-child control-variable names | A secret reference named like a runtime option can cross an unintended child boundary |
+| Returning from detached service startup | Gate first work on an explicit startup acknowledgment and report uncertain admission truthfully | A timeout can otherwise leave a child that starts model work after its caller reports failure |
+| Completing a native dynamic tool | Join thread, turn, call ID and tool name to the actual host receipt | A matching call ID alone can attach completion evidence to another registered tool |
+| Continuing a completed delegated task | Use the control plane's explicit task-resume operation | Message delivery may queue information without scheduling the idle recipient |
 
 These are conditional checks for the affected behavior. Do not turn each one into
 an unrelated task gate. Preserve original failures and label fake-server, offline,
 native, live-provider and package-install evidence separately. Tiny synthetic
 decision cohorts establish a narrow observed result, not probability calibration
 or general compaction quality.
+
+- A Python utility inside an exact-inventory archive must disable bytecode before local imports. Test the documented plain `python3 --help` path with bytecode environment overrides absent; unchanged files must remain unchanged.
+- Evidence discovery must distinguish control specifications from callback receipts. A broad witness glob can include its own spec and falsely reject a genuine native callback; validate receipt kind and identity before joining event digests.
+- A prepared evaluation runner must match production state transitions before paid execution. Queued generation zero becomes claimed generation one; check that contract in offline preflight and freeze the corrected criteria before any model call.

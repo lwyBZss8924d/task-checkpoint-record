@@ -7,5 +7,5 @@ case "${1:---help}" in
     shift
     exec /opt/codex-runtime/bin/codex "$@"
     ;;
-  *) exec /usr/local/bin/bun --no-env-file /opt/task-checkpoint-record/bin/task-checkpoint-record "$@" ;;
+  *) exec /opt/task-checkpoint-record/bin/task-checkpoint-record "$@" ;;
 esac

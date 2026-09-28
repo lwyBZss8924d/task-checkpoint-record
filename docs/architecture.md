@@ -8,15 +8,19 @@ history and authentication remain owned by their original clients.
 flowchart LR
   H[Native lifecycle callback] --> Q[Bounded durable enqueue]
   Q --> J[SQLite jobs and leases]
-  S[Independent service] --> J
+  S[Independent service or activated agent daemon] --> J
   J --> P[Local helper process]
   R[Immutable RAW or ATIF bytes] --> P
   P --> W[Window and record metadata]
   W --> D[Exact query and deeplink resolution]
   D --> K[Record and recall Skills]
-  A[Prepared synthetic or redacted job] --> C[Dedicated Codex adapter]
-  C --> V[Validated result and native receipt]
-  V --> W
+  W --> A[Explicit activation and frozen snapshot]
+  A --> C[Resident Codex supervisor]
+  C --> B[Budgeted native workers]
+  B --> T[Scoped helper PTC tools]
+  T --> V[Cited reports and supervisor reduction]
+  V --> G[Proposal and evidence graph]
+  G --> D
 ```
 
 SQLite is application storage with explicit correlation metadata. It is not an
@@ -33,9 +37,12 @@ checkpoint remain separate statuses.
 
 Codex SessionStart/UserPromptSubmit can carry cached additionalContext. PostCompact
 can trigger work, while SessionStart with compact source is the supported recall
-injection point in the inspected release. Stop is a turn-completion hook, not a
-before-turn hook. v0.1 Stop is advisory; no fresh synchronous reviewer gate is
-claimed. Existing project/Goal gates keep their independent authority.
+injection point in the inspected release. Stop is a turn-completion hook. Its
+default is advisory. Explicit `strict_once` can request one continuation from a
+completed cached review with matching binding, native turn and source bounds.
+An eligible prior window may satisfy those bounds; changed source bounds or
+missing, pending or stale evidence cannot. The Hook never waits for a model.
+Existing project/Goal gates keep their independent authority.
 
 Explicit bindings select the master session, client/profile, task and source roots.
 Observer/worker sessions are inert. Live binding begins at the current complete
@@ -53,10 +60,20 @@ errors. Queue and query limits are part of the interface rather than hidden prom
 assumptions. Measure callback latency under the intended load; asynchronous work
 still consumes host resources and does not have zero cost.
 
-An optional model job owns a Codex App Server stdio child with an isolated persistent
-authentication home and a fresh persisted native thread. v0.1 uses per-job process
-isolation. A resident multi-job supervisor, automatic semantic fan-out and stronger
-native gate policies require their own tested lifecycle and cost controls.
+The explicit agent daemon also drains extraction for its admitted bindings. Each
+activation freezes a task objective, model profile, content admissions and finite
+budgets, and owns a resident Codex App Server process/thread. Serial windows reuse
+that supervisor. Each delegated worker owns a fresh process/thread, uses scoped
+helper tools and cites persisted evidence before its report can be accepted.
+The host reserves native turns, tool calls and external attempts before effects.
+
+Proposals are immutable observations. Later session failures are appended as
+health evidence and invalidate cached freshness. An unconfirmed process closure
+continues to occupy its capacity slot. Native/provider attempts that lose their
+lease remain interrupted or outcome-unknown; an explicit retry consumes the
+same activation totals. Stop/deactivate propagates cancellation to model sessions,
+tool callbacks and owned extraction helpers. The text-only prepared-input library
+remains available independently of the resident service.
 
 ## Retrieval and continuity
 
@@ -76,5 +93,12 @@ lineage bytes. Imported event envelopes and observed windows do not independentl
 prove full schema validation, authentic source content or completed task acceptance.
 Consumers inspect the recorded verification level before using a pointer.
 
-See [the helper interface](helper-protocol.md), [model runtime](app-server-runtime.md)
+Agent proposals expose `formal_owner_checkpoint: false` and
+`task_acceptance: false`. Their deeplinks bind the selected window, immutable
+snapshot, observed role-labelled native calls and exact helper result digests.
+`agent verify` reports these relationships and current health; it does not replay
+source bodies or grant access to a different task.
+
+See [the agent service](agent-service.md), [helper interface](helper-protocol.md),
+[resident runtime](agent-runtime.md), [prepared-input API](app-server-runtime.md)
 and [dedicated authentication](authentication.md) for executable boundaries.

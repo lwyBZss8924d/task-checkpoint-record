@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { closeSync, fstatSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { basename, isAbsolute } from "node:path";
+import { validateApiKeyEnvName } from "./config.ts";
 import { Store } from "./store.ts";
 import type { Binding, Evidence, Job, Native, NormalizedRecord, Page, Source, WorkerOptions } from "./types.ts";
 import { bool, canonical, checkFingerprint, childEnvironment, digest, fail, fingerprint, integer, keys, nullable, object, oneOf, openRegular, parseJson, range, safeError, sha, str, underRoot } from "./security.ts";
@@ -16,10 +18,28 @@ export function workerOptions(options:WorkerOptions):Required<WorkerOptions>{
   integer(out.pageBytes,1024,4*1024*1024);integer(out.pageLimit,1,1000);
   if(out.leaseMs<=out.timeoutMs+500)fail("lease_shorter_than_helper_deadline");return out;
 }
-export async function runHelper(argv:string[],options:Required<WorkerOptions>):Promise<unknown>{
+export async function runHelper(argv:string[],options:Required<WorkerOptions>,signal?:AbortSignal):Promise<unknown>{
+  return launchHelper(argv,options,signal);
+}
+/** A separate, explicit scoring-only credential lane; the ordinary ETL and
+ * native-agent child environment never receives this binding. */
+export async function runScoringHelper(argv:string[],options:Required<WorkerOptions>,credential:{envName:string;value:string},signal?:AbortSignal):Promise<unknown>{
+  if(signal?.aborted)fail("helper_cancelled");
+  if(!credential||typeof credential.value!=="string"||credential.value.length<1||credential.value.length>8192||/[\u0000-\u001f\u007f]/.test(credential.value))fail("invalid_scoring_credential_binding");
+  validateApiKeyEnvName(credential.envName);
+  const operation=argv.indexOf("score-prepared");
+  if(operation<1||argv.lastIndexOf("score-prepared")!==operation)fail("scoring_operation_required");
+  const prefix=argv.slice(0,operation),runtime=basename(prefix[0]??"");
+  const scriptPrefix=(runtime==="node"||runtime==="bun")&&isAbsolute(prefix.at(-1)??"")&&/\.(?:mjs|js|ts)$/.test(prefix.at(-1)??"")&&prefix.slice(1,-1).every(a=>a==="--no-env-file"||a==="--no-install"||a.startsWith("--config=")&&isAbsolute(a.slice(9)));
+  if(!(prefix.length===1&&runtime==="ultrafast-atif-helper")&&!scriptPrefix)fail("scoring_helper_command_required");
+  return launchHelper(argv,options,signal,credential);
+}
+async function launchHelper(argv:string[],options:Required<WorkerOptions>,signal?:AbortSignal,credential?:{envName:string;value:string}):Promise<unknown>{
+  if(signal?.aborted)fail("helper_cancelled");
   if(process.platform==="win32")fail("helper_descendant_cleanup_unsupported");
   return new Promise((resolve,reject)=>{
-    const child=spawn(argv[0],argv.slice(1),{detached:true,stdio:["ignore","pipe","pipe"],env:childEnvironment("worker")});
+    const env=childEnvironment("worker");if(credential)env[credential.envName]=credential.value;
+    const child=spawn(argv[0],argv.slice(1),{detached:true,stdio:["ignore","pipe","pipe"],env});
     const ownedPid=child.pid;
     const chunks:Buffer[]=[];let outBytes=0,errBytes=0,settling=false;
     const cleanup=async():Promise<boolean>=>{
@@ -38,13 +58,14 @@ export async function runHelper(argv:string[],options:Required<WorkerOptions>):P
       return false;
     };
     const finish=async(code:string|null,value?:unknown)=>{
-      if(settling)return;settling=true;clearTimeout(timer);child.stdout.destroy();child.stderr.destroy();
+      if(settling)return;settling=true;clearTimeout(timer);signal?.removeEventListener("abort",onAbort);child.stdout.destroy();child.stderr.destroy();
       const clean=await cleanup();
       if(!clean)code="helper_group_cleanup_unverified";
       if(code){try{fail(code);}catch(error){reject(error);}}else resolve(value);
     };
     const rejectCode=(code:string)=>{void finish(code);};
     const timer=setTimeout(()=>rejectCode("helper_deadline_exceeded"),options.timeoutMs);
+    const onAbort=()=>rejectCode("helper_cancelled");
     child.on("error",()=>rejectCode("helper_spawn_failed"));
     child.stdout.on("data",(chunk:Buffer)=>{outBytes+=chunk.length;if(outBytes>options.stdoutBytes)rejectCode("helper_output_budget_exceeded");else chunks.push(chunk);});
     child.stderr.on("data",(chunk:Buffer)=>{errBytes+=chunk.length;if(errBytes>16*1024)rejectCode("helper_output_budget_exceeded");});
@@ -52,6 +73,7 @@ export async function runHelper(argv:string[],options:Required<WorkerOptions>):P
       if(settling)return;if(code!==0){rejectCode("helper_failed");return;}
       try{void finish(null,parseJson(new TextDecoder("utf-8",{fatal:true}).decode(Buffer.concat(chunks))));}catch(error){rejectCode(safeError(error));}
     });
+    signal?.addEventListener("abort",onAbort,{once:true});if(signal?.aborted)onAbort();
   });
 }
 function pointer(document:unknown,path:string):unknown{
@@ -146,9 +168,10 @@ export function validatePage(input:unknown,binding:Binding,source:Source,fd:numb
   if(next!==null && records.some(r=>r.source.offset+r.source.length>next))fail("cursor_before_record_end");
   return {schema_version:p.schema_version,records,next_offset:next,eof,incomplete_tail:tail,omissions};
 }
-export async function processJob(store:Store,job:Job,inputOptions:WorkerOptions):Promise<string>{
+export async function processJob(store:Store,job:Job,inputOptions:WorkerOptions,signal?:AbortSignal):Promise<string>{
   const options=workerOptions(inputOptions);let fd:number|undefined;
   try{
+    if(signal?.aborted)fail("helper_cancelled");
     const binding=store.binding(job.binding_id);const source=binding.sources.find(s=>s.source_id===job.source_id);if(!source)fail("source_binding_missing");
     underRoot(source.path,binding.source_root);fd=openRegular(source.path);
     const state=store.sourceState(job);checkFingerprint(fd,state.fingerprint,state.cursor);
@@ -161,7 +184,7 @@ export async function processJob(store:Store,job:Job,inputOptions:WorkerOptions)
     if(state.cursor>=job.target_size){store.finishUnchanged(job);return "succeeded";}
     const initialSize=job.target_size;const anchor=canonical(fingerprint(fd,state.cursor));
     const argv=[...options.helper,"ingest","--input",source.path,"--format",source.format,"--allow-root",binding.source_root,"--offset",String(state.cursor),"--limit",String(options.pageLimit),"--max-bytes",String(Math.min(options.pageBytes,initialSize-state.cursor)),"--json"];
-    const result=await runHelper(argv,options);
+    const result=await runHelper(argv,options,signal);
     checkFingerprint(fd,anchor,state.cursor);
     // Ensure the pathname still designates this open file; an inode replacement
     // must not make subsequent page pointers silently name a different source.
@@ -173,6 +196,7 @@ export async function processJob(store:Store,job:Job,inputOptions:WorkerOptions)
     const reachedWindowBudget=initialSize-state.cursor<=options.pageBytes;
     const terminal=next>=initialSize||(reachedWindowBudget&&(page.eof||page.incomplete_tail));
     if(next===state.cursor&&!terminal)fail("record_exceeds_page_budget");
+    if(signal?.aborted)fail("helper_cancelled");
     store.finishPage(job,page,state.cursor,next,canonical(fingerprint(fd,next)),terminal);
     return terminal?"succeeded":"continued";
   }catch(error){

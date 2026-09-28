@@ -17,14 +17,19 @@ an independent [source repository](https://github.com/lwyBZss8924d/ultrafast-ati
 - Exact filters, field selection, pagination, checkpoint metadata and deeplinks.
 - Explicit source/binding/native/ATIF/telemetry identities with unavailable fields
   retained as gaps. Original source bytes and literal ATIF versions stay intact.
-- A separate, explicit Codex App Server API for prepared synthetic or redacted
-  model jobs using a dedicated persistent ChatGPT login.
-- Package Skills, Codex plugin manifests, source/release checks and containers.
+- An explicitly activated resident Codex supervisor that delegates scoped helper
+  tools to bounded workers, reduces their cited reports and records proposals.
+- A dedicated persistent ChatGPT login, immutable model/budget policies and
+  separate host-only Jev scoring for admitted synthetic or redacted packets.
+- Self-contained Skills, Codex and Claude plugins with native Hooks, Claude slash
+  commands, source/release checks and containers.
 
-The worker defaults to two deterministic jobs and caps concurrency at 32. This
-version does not claim a resident multi-agent model supervisor, automatic model
-worker spawning, a synchronous Stop review gate, or an OpenTelemetry collector.
-Optional OTel fields store explicitly supplied trace correlation.
+Worker concurrency defaults to two and is capped at 32. Native worker fan-out
+also obeys separate per-round and activation-wide budgets. Hooks enqueue work
+and read completed cached reviews; they never wait for models. Stop is advisory
+by default, with an explicit, once-per-turn continuation policy for fresh evidence.
+Optional OTel fields store supplied trace correlation; collector/export deployment
+is a separate integration.
 
 ## Install one bundle
 
@@ -34,7 +39,8 @@ Use an existing Bun 1.3.14+ and Node 18+ installation. Unpack into a new directo
 review `release-bundle.json`, and prepare an installation plan:
 
 ```sh
-bun scripts/install-cli.ts bundle-plan \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install \
+  --config="$PWD/config/runtime.bunfig.toml" scripts/install-cli.ts bundle-plan \
   --bundle-root /absolute/unpacked-release \
   --bundle-sha256 REVIEWED_RELEASE_MANIFEST_SHA256 \
   --prefix /absolute/existing/bin --stage /absolute/new-build-stage \
@@ -54,7 +60,9 @@ ultrafast-atif-helper --help
 ```
 
 For source development, install locked dependencies with
-`bun install --frozen-lockfile`, then use `bun --no-env-file src/cli.ts --help`.
+`bun install --frozen-lockfile`, then use `bin/task-checkpoint-record --help`.
+The packaged launcher selects its own Bun configuration and excludes ambient
+preload and dotenv settings before application code runs.
 
 ## Configure once
 
@@ -109,6 +117,28 @@ retrieval is a separate helper operation that verifies selected bytes.
 
 ## Agent workflows and models
 
+For a long task, bind the exact source first, select `agent_service` in the shared
+configuration, and prepare an admission from `schema agent-activation`:
+
+```sh
+task-checkpoint-record agent activate --config /absolute/task-checkpoint.json \
+  --file /absolute/agent-activation.json
+task-checkpoint-record agent start --state /absolute/private/state --daemon SELECTED_DAEMON
+task-checkpoint-record agent jobs --state /absolute/private/state \
+  --activation SELECTED_ACTIVATION --limit 20
+task-checkpoint-record agent verify --state /absolute/private/state --run SELECTED_RUN
+task-checkpoint-record agent resolve --state /absolute/private/state --link SELECTED_TCR_LINK
+task-checkpoint-record agent stop --state /absolute/private/state --daemon SELECTED_DAEMON
+```
+
+Activation freezes the task objective, model profile, content policy and budgets.
+The daemon extracts admitted windows, keeps one supervisor process/thread per
+activation, and gives each worker exact scoped query/get/context-pack tools. A
+valid report must cite recorded tool evidence. Proposals and their graph remain
+intermediate; the task owner seals its formal checkpoint. The default native
+content policy is metadata only. See the [agent service guide](docs/agent-service.md)
+for recovery, lifecycle and evidence limits.
+
 Start from [llms.txt](llms.txt) and the
 [record/recall Skill](skills/task-checkpoint-record/SKILL.md). The Skill can be
 installed independently with:
@@ -117,14 +147,19 @@ installed independently with:
 npx skills add lwyBZss8924d/task-checkpoint-record --skill task-checkpoint-record
 ```
 
-Plugin manifests expose these workflows. CLI installation and native activation
-remain explicit. See [distribution](docs/distribution.md) for plugin artifacts,
-CI, containers and the combined helper payload.
+The [client plugins](docs/client-plugins.md) include seven Codex lifecycle events
+or six Claude events, plus six Claude slash commands. They require explicit
+configuration, enablement and native trust; install alone does not activate a
+task. See [distribution](docs/distribution.md) for artifacts, CI, containers and
+the combined helper payload. Pi package/extension adoption is tracked in the
+[adapter roadmap](docs/adapters-roadmap.md).
 
-The optional `runAppServerTask`/`runSupervisor` library uses a dedicated Codex home
-and the standard `codex login --device-auth` flow. Production supervisor defaults
-to `gpt-6-sol`/`medium`; live evals use `gpt-6-luna`/`high`. See
-[authentication](docs/authentication.md) and [runtime contract](docs/app-server-runtime.md).
+The agent service and optional prepared-input `runAppServerTask`/`runSupervisor`
+library use a dedicated Codex home and standard `codex login --device-auth`.
+Production supervisor defaults to `gpt-6-sol`/`medium`, semantic workers to
+`gpt-6-luna`/`medium`; the explicit eval profile uses `gpt-6-luna`/`high` for both.
+See [authentication](docs/authentication.md), the [resident runtime](docs/agent-runtime.md)
+and the [prepared-input API](docs/app-server-runtime.md).
 No existing client credentials are copied. OpenRouter/Jev is a separate explicit
 scoring route; it is not the provider for this native ChatGPT runtime.
 

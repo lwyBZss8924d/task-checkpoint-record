@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,6 +33,18 @@ describe("one explicit portable config",()=>{
       {schema_version:CONFIG_VERSION,scoring:{endpoint:"https://example.invalid"}},
       {schema_version:CONFIG_VERSION,scoring:{fallback:"typesafe"}},
       {schema_version:CONFIG_VERSION,scoring:{api_key_env:"bad=key"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"BUN_OPTIONS"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"NODE_OPTIONS"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"LD_PRELOAD"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"HOME"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"USER"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"LOGNAME"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"TMPDIR"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"LANG"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"PYTHONPATH"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"PYTHONHOME"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"PYTHONSTARTUP"}},
+      {schema_version:CONFIG_VERSION,scoring:{api_key_env:"HTTPS_PROXY"}},
       {schema_version:CONFIG_VERSION,recorder:{concurrency:"2"}},
       {schema_version:CONFIG_VERSION,recorder:{concurrency:33}},
       {schema_version:CONFIG_VERSION,codex:{home:123}},
@@ -60,6 +73,25 @@ describe("one explicit portable config",()=>{
     expect(()=>loadConfig(duplicate)).toThrow("config_duplicate_key");
     const huge=join(root,"huge.json");writeFileSync(huge," ".repeat(65537));expect(()=>loadConfig(huge)).toThrow("config_byte_budget");
     const utf=join(root,"utf.json");writeFileSync(utf,Buffer.from([255]));expect(()=>loadConfig(utf)).toThrow("config_invalid_utf8");
+  });
+  test("optional agent policy is inert, finite and coherent before activation",()=>{
+    const root=temporary(),config=parseConfig({schema_version:CONFIG_VERSION},root);
+    expect(config.agent_service).toEqual({concurrency:2,max_workers:2,max_native_turns:3,max_tool_calls:64,deadline_ms:180000,max_rounds:2,data_policy:"metadata_only",external_score_max_calls:0});
+    expect(existsSync(config.recorder.state_dir)).toBe(false);
+    expect(parseConfig({schema_version:CONFIG_VERSION,agent_service:{max_workers:32,concurrency:32,max_native_turns:33,max_tool_calls:256,deadline_ms:300000,max_rounds:32,data_policy:"prepared_fragments",external_score_max_calls:1}},root).agent_service.max_workers).toBe(32);
+    for(const agent_service of [{concurrency:33},{max_workers:33},{max_native_turns:34},{max_tool_calls:257},{deadline_ms:300001},{max_rounds:33},{external_score_max_calls:2},{max_workers:3},{concurrency:3},{data_policy:"owner_selected_source"},{prepared_packets:[]},{enabled:true},{max_model_calls:3}])
+      expect(()=>parseConfig({schema_version:CONFIG_VERSION,agent_service},root)).toThrow(ConfigurationError);
+  });
+  test("expected config digest binds the same bounded bytes before parsing or state mutation",()=>{
+    const root=temporary(),file=join(root,"suite.json");writeConfig(file);const digest=createHash("sha256").update(readFileSync(file)).digest("hex");
+    expect(loadConfig(file,digest).schema_version).toBe(CONFIG_VERSION);
+    expect(()=>loadConfig(file,"not-a-digest")).toThrow("config_expected_digest_invalid");
+    expect(()=>loadConfig(file,"0".repeat(64))).toThrow("config_digest_mismatch");
+    const checked=run(["config","check","--config",file,"--config-sha256",digest],root);expect(checked.status).toBe(0);
+    expect(run(["init","--config",file,"--config-sha256","0".repeat(64)],root).status).toBe(1);
+    expect(existsSync(join(root,".local/task-checkpoint-record"))).toBe(false);
+    expect(run(["init","--config-sha256",digest,"--state",join(root,"state")],root).stderr).toContain("config_required_for_digest");
+    writeFileSync(file,readFileSync(file,"utf8")+"\n");expect(()=>loadConfig(file,digest)).toThrow("config_digest_mismatch");
   });
   test("explicit config beats state env; CLI state overrides it and checks have no state effects",()=>{
     const root=temporary(),file=join(root,"suite.json"),configured=join(root,"from-config"),environment=join(root,"from-env"),override=join(root,"from-cli");

@@ -6,7 +6,8 @@ description: Record an explicitly selected long-running agent task or recall its
 # Task Checkpoint Record
 
 Use the installed `task-checkpoint-record` CLI, or the package's `bin/` entrypoint.
-Read `--help` and `schema binding|query` when the current interface is not known.
+Read `--help` and the selected `schema binding`, `schema query` or
+`schema agent-activation` when the current interface is not known.
 The selected state directory, binding and task establish scope; a pointer does not
 authorize another Goal or source access.
 
@@ -44,30 +45,53 @@ historical replay, with that purpose recorded. Missing earlier context stays a g
 
 Apply the binding with `bind --file ...`. A disabled immutable binding is not
 silently resumed; use a new binding identity for a newly authorized observation.
-Start the independent worker explicitly through `service start` or perform a
-bounded `service once`. Concurrency defaults to two and is capped at 32; the CLI
-cap describes deterministic workers, not 32 independently proven model agents.
+Start the deterministic worker explicitly through `service start` or perform a
+bounded `service once`. An activated native agent daemon also drains its selected
+bindings, so it needs no second extraction daemon. Concurrency defaults to two
+and is capped at 32; a cap test does not prove 32-way live model capacity.
 Inspect job/error states before retrying one exact job. Stop and unbind only the
 selected work; preserve recorded evidence.
 
 Hook installation follows the package's exact plan/apply/verify front door and
 the native client's trust flow. Hooks enqueue or read cached metadata and never
-start a model or daemon implicitly. Observer/worker sessions are inert. v0.1 Stop
-is advisory; do not describe asynchronous analysis as a synchronous gate.
+start a model or daemon implicitly. Observer/worker sessions are inert. Stop is
+advisory by default. Explicit `strict_once` can request one continuation using a
+fresh cached proposal with the same native turn and source bounds. A pending
+model review never delays a callback or supplies a blocking decision.
 
-## Optional model work
+## Activate bounded native observation
 
-The Codex adapter uses a dedicated persistent home and standard device-auth.
-Production supervisor defaults to gpt-6-sol/medium; live evals use gpt-6-luna/high.
-Model input must be separately prepared synthetic or deliberately redacted text.
-Do not send real RAW merely because a record contains a local path or a score.
-Keep native model/transport receipts separate from record, review and task
-acceptance. No silent account/model fallback.
+Use `agent activate --config ... --file ...` only for the selected long task,
+with a bounded objective, actual binding ID, daemon ID and finite policy. Read
+the activation schema first; activation freezes config and does not launch a
+daemon. `agent start --state ... --daemon ...` explicitly starts the independent
+service. The default policy shares metadata with the native model; prepared
+fragments need separate synthetic/redacted admission. Real RAW stays local.
+
+The resident supervisor delegates scoped helper work, then reduces reports with
+persisted evidence citations. Each later window can reuse its process/thread.
+Use `agent jobs --activation ... --limit ...`, `agent verify --run ...` and
+`agent resolve --link ... --fields ...` for bounded recall. Inspect native calls,
+coverage, omissions and current health. A proposal is not a formal owner
+checkpoint or completed master task. Do not claim source content was read when
+only metadata was available.
+
+An interrupted/outcome-unknown attempt requires inspection and explicit retry;
+`agent retry` retains earlier receipts and consumes the same totals. `agent
+cancel` targets one run; `agent deactivate` revokes an activation; `agent stop`
+ends the selected daemon while retaining records and persistent authentication.
+An `admitted_unknown` start result is not permission to start a duplicate.
+
+The Codex runtime uses a dedicated persistent home and standard device-auth.
+Production supervisor defaults to gpt-6-sol/medium and workers to
+gpt-6-luna/medium; explicit evals use gpt-6-luna/high for both. Model/effort and
+account do not silently fall back. See the bundled
+[agent service guide](references/docs/agent-service.md) for actual commands.
 
 ## Configure a standalone or combined installation
 
 Use one explicit `task-checkpoint.config.v1` JSON file for the recorder and helper.
-`config schema` describes its recorder, codex and scoring sections. Create a new
+`config schema` describes recorder, codex, scoring and agent_service. Create a new
 template with `config init --file /absolute/new-config.json --provider openrouter`
 (or `typesafe`), edit the selected paths and settings, then run
 `config check --config /absolute/new-config.json`. The check is local; it does not
@@ -94,6 +118,6 @@ The Skill's bundled [configuration guide](references/docs/configuration.md),
 [authentication guide](references/docs/authentication.md),
 [architecture](references/docs/architecture.md),
 [installation](references/docs/installation.md) and
-[model runtime](references/docs/app-server-runtime.md) are available even when
+[resident runtime](references/docs/agent-runtime.md) are available even when
 this Skill folder is installed separately. Select only the needed guide. Installing
 a Skill supplies instructions; it does not install its CLI or activate a service.

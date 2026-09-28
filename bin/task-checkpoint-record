@@ -1,3 +1,17 @@
-#!/usr/bin/env -S bun --no-env-file
-import { main } from "../src/cli.ts";
-await main(process.argv.slice(2));
+#!/bin/sh
+# Resolve an npm-created command symlink without consulting the caller's cwd.
+tcr_script=$0
+tcr_links=0
+while [ -L "$tcr_script" ]; do
+  tcr_links=$((tcr_links + 1))
+  [ "$tcr_links" -le 32 ] || exit 1
+  tcr_link=$(readlink "$tcr_script") || exit 1
+  case "$tcr_link" in
+    /*) tcr_script=$tcr_link ;;
+    *) tcr_script=$(dirname "$tcr_script")/$tcr_link ;;
+  esac
+done
+tcr_root=$(CDPATH='' cd -P "$(dirname "$tcr_script")/.." && pwd) || exit 1
+# Bun reads these flags before loading the CLI. Never source an environment file.
+unset BUN_OPTIONS
+exec bun --no-env-file --no-install "--config=$tcr_root/config/runtime.bunfig.toml" "$tcr_root/src/cli.ts" "$@"

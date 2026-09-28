@@ -19,7 +19,8 @@ Public source, Skills and plugins must be usable from this repository or its
 combined release alone. The bundle pins the helper commit, files and MIT license;
 never depend on a maintainer's absolute checkout or credentials. Keep all linked
 workflow documents in the package. Hooks and model calls require explicit runtime
-operations; a plugin install supplies Skills and does not activate a service.
+operations. Full client plugins supply Hooks and Skills, and Claude commands;
+installation alone does not activate a service or task binding.
 
 Private run evidence belongs under ignored `.local/` or `workspace/`. Never commit
 real RAW, authentication files, API keys, native private identities or machine

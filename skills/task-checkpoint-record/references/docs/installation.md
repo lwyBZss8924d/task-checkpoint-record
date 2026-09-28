@@ -8,6 +8,14 @@ Node or npm packages, copy credentials, log in, change native trust, or start a
 worker/model. Run these source scripts with an already installed Bun. The same
 workflow supports a temporary test prefix and a user's existing local bin.
 
+The recorder's executable wrapper clears `BUN_OPTIONS` in its own process, then
+starts Bun with `--no-env-file --no-install --config=ABS_OWNED_CONFIG`. The owned
+`config/runtime.bunfig.toml` contains no preloads. The single `--config=...`
+argument is intentional; `--config PATH` is not equivalent in the tested Bun
+runtime. Thus caller `.env` and `bunfig.toml` files cannot run before CLI checks.
+Direct source-tool invocations need the same flags, as shown below. Relative
+source-tool examples assume the recorder repository root as the working directory.
+
 `scripts/install-cli.ts` builds from the two selected checkouts. It bundles the
 record CLI for Bun and the helper CLI for Node with the installed Bun builder;
 the helper's existing Node entrypoint is preserved. It runs each built CLI's
@@ -24,7 +32,9 @@ sibling helper checkout, remote clone or floating dependency. Use the published,
 reviewed SHA-256 of `release-bundle.json` (not the archive digest) as the input pin:
 
 ```sh
-bun /absolute/unpacked-release/scripts/install-cli.ts bundle-plan \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install \
+  --config=/absolute/unpacked-release/config/runtime.bunfig.toml \
+  /absolute/unpacked-release/scripts/install-cli.ts bundle-plan \
   --bundle-root /absolute/unpacked-release \
   --bundle-sha256 REVIEWED_RELEASE_MANIFEST_DIGEST \
   --prefix /absolute/existing/bin \
@@ -68,7 +78,7 @@ An example uses shell variables only for task-specific paths; the values are
 review inputs, not package defaults:
 
 ```sh
-bun scripts/install-cli.ts plan \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install --config="$PWD/config/runtime.bunfig.toml" scripts/install-cli.ts plan \
   --record-repo /absolute/checkouts/task-checkpoint-record \
   --helper-repo /absolute/checkouts/ultrafast-atif-helper \
   --prefix /absolute/existing/bin \
@@ -88,11 +98,11 @@ plan path and SHA-256 are printed as JSON. No prefix change occurs during planni
 Applying requires that exact reviewed plan digest and a new receipt path:
 
 ```sh
-bun scripts/install-cli.ts apply \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install --config="$PWD/config/runtime.bunfig.toml" scripts/install-cli.ts apply \
   --plan /absolute/private-review/install-plan.json \
   --sha256 REVIEWED_64_HEX_DIGEST \
   --output /absolute/private-review/install-receipt.json
-bun scripts/install-cli.ts verify --prefix /absolute/existing/bin
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install --config="$PWD/config/runtime.bunfig.toml" scripts/install-cli.ts verify --prefix /absolute/existing/bin
 ```
 
 The installation layout is:
@@ -103,6 +113,7 @@ The installation layout is:
 <prefix>/.task-checkpoint-record/owner.json
 <prefix>/.task-checkpoint-record/current.json
 <prefix>/.task-checkpoint-record/versions/<manifest-sha256>/manifest.json
+<prefix>/.task-checkpoint-record/versions/<manifest-sha256>/config/runtime.bunfig.toml
 <prefix>/.task-checkpoint-record/versions/<manifest-sha256>/record/cli.mjs
 <prefix>/.task-checkpoint-record/versions/<manifest-sha256>/helper/...
 ```
@@ -120,11 +131,16 @@ Reapplying an unchanged plan is `already_applied`; it is not a fresh installatio
 An upgrade gets a new directory and moves the owned launchers. Previously installed
 versions remain available for Hooks that still name their exact artifact. Runtime
 upgrades require a new reviewed plan; verify fails if the recorded runtime changes.
+New manifests include `bun_config_path` and the owned config's exact file digest.
+Legacy v1 manifests remain inspectable and usable as exact rollback targets;
+creating or applying a new plan, or generating a new recorder Hook command,
+requires the owned runtime-config marker and file. Upgrade a legacy installation
+through a freshly reviewed plan before creating new Hook definitions.
 
 ## CLI rollback and preconditions
 
 ```sh
-bun scripts/install-cli.ts rollback \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install --config="$PWD/config/runtime.bunfig.toml" scripts/install-cli.ts rollback \
   --receipt /absolute/private-review/install-receipt.json \
   --sha256 REVIEWED_RECEIPT_DIGEST \
   --output /absolute/private-review/install-rollback.json
@@ -151,7 +167,7 @@ home is a different configuration surface; these Hook commands never log in,
 start a service or select a model.
 
 ```sh
-bun scripts/hook-plan.ts plan \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install --config="$PWD/config/runtime.bunfig.toml" scripts/hook-plan.ts plan \
   --client codex \
   --config /absolute/source-client-home/hooks.json \
   --manifest /absolute/existing/bin/.task-checkpoint-record/versions/DIGEST/manifest.json \
@@ -169,8 +185,9 @@ settings documents that contain inline secrets. No such document is needed here.
 When additions are needed, formatting changes but all unrelated JSON values and
 existing handler positions remain intact. An idempotent re-plan preserves bytes.
 
-The generated command invokes the manifest's absolute Bun executable and the
-exact versioned `record/cli.mjs`, followed by the absolute state and profile.
+The generated POSIX command uses `/usr/bin/env -u BUN_OPTIONS` before the
+manifest's absolute Bun executable, pinned runtime config and exact versioned
+`record/cli.mjs`, followed by the absolute state and profile.
 It does not route through the mutable global launcher. A code revision changes
 the path in the native definition, so it cannot silently inherit the same command
 definition. The plan's `definition_sha256` is our review digest; **it is not Codex's
@@ -193,9 +210,9 @@ the event was durably stored. The service's later drain and model work are separ
 Review, apply and verify the hash-bound plan:
 
 ```sh
-bun scripts/hook-plan.ts apply --plan /absolute/private-review/hooks-plan.json \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install --config="$PWD/config/runtime.bunfig.toml" scripts/hook-plan.ts apply --plan /absolute/private-review/hooks-plan.json \
   --sha256 REVIEWED_PLAN_DIGEST --output /absolute/private-review/hooks-receipt.json
-bun scripts/hook-plan.ts verify --plan /absolute/private-review/hooks-plan.json \
+/usr/bin/env -u BUN_OPTIONS bun --no-env-file --no-install --config="$PWD/config/runtime.bunfig.toml" scripts/hook-plan.ts verify --plan /absolute/private-review/hooks-plan.json \
   --sha256 REVIEWED_PLAN_DIGEST
 ```
 

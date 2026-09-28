@@ -154,6 +154,55 @@
         }
       }
     },
+    "agent_service": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Policy ceilings for explicit native agent activation only; configuration never starts services or models.",
+      "properties": {
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "max_workers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "max_native_turns": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 33,
+          "description": "Admitted native turn/start operations per round, including one supervisor turn and at most max_workers worker turns. Native internal HTTP retries and tool-followup model requests are not separately observable or hard-limited by this counter."
+        },
+        "max_tool_calls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "deadline_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000
+        },
+        "max_rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "data_policy": {
+          "enum": [
+            "metadata_only",
+            "prepared_fragments"
+          ]
+        },
+        "external_score_max_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
     "scoring": {
       "type": "object",
       "additionalProperties": false,
@@ -172,7 +221,47 @@
         },
         "api_key_env": {
           "type": "string",
-          "pattern": "^[A-Z_][A-Z0-9_]{0,127}$"
+          "pattern": "^[A-Z_][A-Z0-9_]{0,127}$",
+          "not": {
+            "anyOf": [
+              {
+                "enum": [
+                  "HOME",
+                  "PATH",
+                  "USER",
+                  "LOGNAME",
+                  "TMPDIR",
+                  "TEMP",
+                  "TMP",
+                  "LANG",
+                  "LC_ALL",
+                  "TZ",
+                  "SYSTEMROOT",
+                  "WINDIR",
+                  "CODEX_HOME",
+                  "SHELL",
+                  "ENV",
+                  "BASH_ENV",
+                  "ZDOTDIR",
+                  "SHELLOPTS",
+                  "BASHOPTS",
+                  "IFS",
+                  "CDPATH",
+                  "RUBYOPT",
+                  "PERL5OPT",
+                  "OPENSSL_CONF",
+                  "SSL_CERT_FILE",
+                  "SSL_CERT_DIR"
+                ]
+              },
+              {
+                "pattern": "^(?:BUN_|NODE_|LD_|DYLD_|PYTHON|TASK_CHECKPOINT_RECORD_|CLAUDE_|PI_)"
+              },
+              {
+                "pattern": "(?:^|_)PROXY$"
+              }
+            ]
+          }
         },
         "limits": {
           "type": "object",
@@ -226,5 +315,5 @@
       ]
     }
   },
-  "description": "Runtime also enforces literal-path rules and lease_ms > timeout_ms + 500. Unknown keys are errors; no endpoints or inline credentials."
+  "description": "Runtime also enforces literal-path rules, lease_ms > timeout_ms + 500, agent concurrency <= max_workers and max_workers + 1 <= max_native_turns. Unknown keys are errors; no endpoints or inline credentials."
 }

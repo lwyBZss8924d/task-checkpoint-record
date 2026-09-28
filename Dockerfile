@@ -32,9 +32,10 @@ COPY bin ./bin
 COPY src ./src
 COPY config/codex-service.toml ./config/codex-service.toml
 COPY config/task-checkpoint.container.example.json config/task-checkpoint.config.schema.json ./config/
+COPY config/runtime.bunfig.toml ./config/runtime.bunfig.toml
 COPY container/entrypoint.sh /usr/local/bin/task-checkpoint-entrypoint
 COPY container/ultrafast-atif-helper /usr/local/bin/ultrafast-atif-helper
-RUN chmod 755 /usr/local/bin/task-checkpoint-entrypoint /usr/local/bin/ultrafast-atif-helper \
+RUN chmod 755 /usr/local/bin/task-checkpoint-entrypoint /usr/local/bin/ultrafast-atif-helper /opt/task-checkpoint-record/bin/task-checkpoint-record \
     && chmod 755 /opt/ultrafast-atif-helper/bin/ultrafast-atif-helper.mjs \
     && useradd --create-home --uid 10001 --shell /bin/sh recorder \
     && mkdir -p /var/lib/task-checkpoint-record /var/lib/task-checkpoint-codex /inputs \

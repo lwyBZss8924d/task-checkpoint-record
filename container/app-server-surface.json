@@ -274,6 +274,46 @@
             ],
             "type": "string"
           }
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/required",
+          "equals": [
+            "description",
+            "inputSchema",
+            "name",
+            "type"
+          ]
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/type",
+          "equals": {
+            "enum": [
+              "function"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/name",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/description",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/inputSchema",
+          "equals": true
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/deferLoading",
+          "equals": {
+            "type": "boolean"
+          }
         }
       ]
     },
@@ -968,12 +1008,144 @@
           }
         }
       ]
+    },
+    {
+      "file": "DynamicToolCallParams.json",
+      "required": [
+        "arguments",
+        "callId",
+        "threadId",
+        "tool",
+        "turnId"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/threadId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/turnId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/callId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/namespace",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/tool",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/arguments",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "file": "DynamicToolCallResponse.json",
+      "required": [
+        "contentItems",
+        "success"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/contentItems",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/DynamicToolCallOutputContentItem"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "pointer": "/properties/success",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolCallOutputContentItem/oneOf/0/properties/type",
+          "equals": {
+            "enum": [
+              "inputText"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolCallOutputContentItem/oneOf/0/properties/text",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolCallOutputContentItem/oneOf/0/required",
+          "equals": [
+            "text",
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "v2/ConfigReadParams.json",
+      "required": [],
+      "checks": [
+        {
+          "pointer": "/properties/includeLayers",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/properties/cwd",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/ConfigReadResponse.json",
+      "required": [
+        "config",
+        "origins"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/config",
+          "equals": {
+            "$ref": "#/definitions/Config"
+          }
+        }
+      ]
     }
   ],
   "notes": [
-    "initialize response precedes initialized notification; initialized uses an empty params object and has no separate entry in this14-type subset.",
+    "initialize response precedes initialized notification; initialized uses an empty params object and has no separate entry in this selected type subset.",
     "Newer unreviewed versions remain unsupported even if these selected schemas match.",
     "Only fields actually read/sent plus selected nested status/identity/usage contracts are included; this is not the whole public protocol.",
-    "The0.158.0 flexUnavailable and promax enum additions are outside consumed error/plan fields; full version-specific schema comparison is retained separately."
+    "The0.158.0 flexUnavailable and promax enum additions are outside consumed error/plan fields; full version-specific schema comparison is retained separately.",
+    "Resident agent runtime additionally uses flat function dynamicTools, item/tool/call with inputText responses, and config/read to refuse effective configured MCP servers; native universal tool prevention is not asserted."
   ]
 }

@@ -2,6 +2,12 @@
   "external_source_links": [],
   "files": [
     {
+      "destination": "references/config/agent-activation.example.json",
+      "projected_sha256": "0e0b1445d19b7699375e53602835ed34c41d9c55be6d578a353ffa4a576342bd",
+      "source": "config/agent-activation.example.json",
+      "source_sha256": "0e0b1445d19b7699375e53602835ed34c41d9c55be6d578a353ffa4a576342bd"
+    },
+    {
       "destination": "references/config/codex-service.toml",
       "projected_sha256": "e0c601e406ba3dc8b1a637538ed969169003c3d4425f94c6e42a378315b27fc0",
       "source": "config/codex-service.toml",
@@ -9,27 +15,51 @@
     },
     {
       "destination": "references/config/task-checkpoint.config.schema.json",
-      "projected_sha256": "c200a341da70c869c09a8ad369f2e4cbe5ff1f5093c6348af969c5c7693dd4cd",
+      "projected_sha256": "8743426fcf25c96e41f0a4b6a88c46812cb10c077df3c71128c0f3300c06f506",
       "source": "config/task-checkpoint.config.schema.json",
-      "source_sha256": "c200a341da70c869c09a8ad369f2e4cbe5ff1f5093c6348af969c5c7693dd4cd"
+      "source_sha256": "8743426fcf25c96e41f0a4b6a88c46812cb10c077df3c71128c0f3300c06f506"
     },
     {
       "destination": "references/config/task-checkpoint.container.example.json",
-      "projected_sha256": "cdf6d245d9277be03a17b97bc159f743c76a447612a089181463fcf66d0332c7",
+      "projected_sha256": "c5aa22f81e5768a629f3968422893c878f1cb598b9be4788f50381877853ac43",
       "source": "config/task-checkpoint.container.example.json",
-      "source_sha256": "cdf6d245d9277be03a17b97bc159f743c76a447612a089181463fcf66d0332c7"
+      "source_sha256": "c5aa22f81e5768a629f3968422893c878f1cb598b9be4788f50381877853ac43"
     },
     {
       "destination": "references/config/task-checkpoint.example.json",
-      "projected_sha256": "d5d97eebea3fccc1645072c5edb64d41c0e7ded3d7de1c7b59e7cb00388de12d",
+      "projected_sha256": "fe38723c81b1ea6e078f617d589bf2d8607db6f7c2c114a289a567ee597bcb08",
       "source": "config/task-checkpoint.example.json",
-      "source_sha256": "d5d97eebea3fccc1645072c5edb64d41c0e7ded3d7de1c7b59e7cb00388de12d"
+      "source_sha256": "fe38723c81b1ea6e078f617d589bf2d8607db6f7c2c114a289a567ee597bcb08"
     },
     {
       "destination": "references/config/task-checkpoint.typesafe.example.json",
-      "projected_sha256": "acf8f36fd420551e7aa57a9913be0d2a6d44f559ea99d8441df89ed1755cbb3c",
+      "projected_sha256": "64482bc6fa01f0fa2428d1ad50b68d592dc2da2c9d78ea3f88766bbd9770f97a",
       "source": "config/task-checkpoint.typesafe.example.json",
-      "source_sha256": "acf8f36fd420551e7aa57a9913be0d2a6d44f559ea99d8441df89ed1755cbb3c"
+      "source_sha256": "64482bc6fa01f0fa2428d1ad50b68d592dc2da2c9d78ea3f88766bbd9770f97a"
+    },
+    {
+      "destination": "references/docs/adapters-roadmap.md",
+      "projected_sha256": "2674464900fecd80672450cede86b1c4fbd31da1ea2389a29ec8c5dbf9c806bc",
+      "source": "docs/adapters-roadmap.md",
+      "source_sha256": "4852b7caabfc9d694aa30f8470764e3492de386a25063165bb57e135bf77c355"
+    },
+    {
+      "destination": "references/docs/agent-runtime.md",
+      "projected_sha256": "d6f44dee7a01d8a3d20874ede3c97de4b505cba979c6bae353122e0ae4c9e634",
+      "source": "docs/agent-runtime.md",
+      "source_sha256": "963c25c183b616aa7dbd4a3953f7ef980643ac6caf7744f61e2f35b120f48cfb"
+    },
+    {
+      "destination": "references/docs/agent-service.md",
+      "projected_sha256": "1c0358e88e234c212896cd09d6ca0355bf806dd36f34c14a66ea99f97625c100",
+      "source": "docs/agent-service.md",
+      "source_sha256": "cb7d06f75d3c609c584aca9bd2083f07e68899e1a8212c8ff429cb596daef2c7"
+    },
+    {
+      "destination": "references/docs/agent-supervisor-plan.md",
+      "projected_sha256": "c4b86a8fa66a60d268c4f0513cdfbd57aeb59e16fd6004758bf6259027987cfd",
+      "source": "docs/agent-supervisor-plan.md",
+      "source_sha256": "c2f508b26eb9c7f2d04cb2699968524d3744c931d64035252dbe76cabaad13b2"
     },
     {
       "destination": "references/docs/app-server-runtime.md",
@@ -39,9 +69,9 @@
     },
     {
       "destination": "references/docs/architecture.md",
-      "projected_sha256": "72b1db0492b6adeb8debc26ae6f28a7a14ad5d622cc3abc7c8034d0569428939",
+      "projected_sha256": "b57d1e4d1ef1ba62ed848b93213c4b5ab65150f83640cb9ae39f37f9f10cc374",
       "source": "docs/architecture.md",
-      "source_sha256": "944e848a6544915ef2c325a8457fc2389a69b1fbba784df18e361de1d67077ed"
+      "source_sha256": "36f27f2af79c7d39c1e3b8d13c37d6bfd3e248404a866af8a099bbda749ae2c0"
     },
     {
       "destination": "references/docs/authentication.md",
@@ -50,22 +80,28 @@
       "source_sha256": "fcd56823cebc79172e9fc66ba018a2ddcd7c6e8a96ac13d6e9276c7602f5218e"
     },
     {
+      "destination": "references/docs/client-plugins.md",
+      "projected_sha256": "defcff3e30c9a6481c7e877513d72c07d1bdee17eddc8c5cd537b0a841b170aa",
+      "source": "docs/client-plugins.md",
+      "source_sha256": "b93a115af72a16405e051412ebd40c231d8341375bcb845cff7233b07659d37b"
+    },
+    {
       "destination": "references/docs/configuration.md",
-      "projected_sha256": "24bff721e9dac7b141361c083dede8bf0ae1fc429d747a8fd38d2b8d0d413b98",
+      "projected_sha256": "c246321426e306fc6014db1339ececced93d2357db3dbbe6c3472ddadc849f49",
       "source": "docs/configuration.md",
-      "source_sha256": "85855f3a2b4a9fe0f8c14879b4c5c9422569cab3036970a0d7faf6672e8b6f87"
+      "source_sha256": "ebc1c233ffc37315395ab079795bee3530fb8d11439b66e9845957e7940250f4"
     },
     {
       "destination": "references/docs/distribution.md",
-      "projected_sha256": "962a5a57be89f96219463378c8f9e453dda33146ca525a9ee25ff5b8a3125eff",
+      "projected_sha256": "843051d4c112a2987a6e4f00a66b34a923ae0d931d488e1d3a7d8cdb9eecf934",
       "source": "docs/distribution.md",
-      "source_sha256": "f969a4fb925fa89ba2493da3b090e1f97204a6f3b643393c84c68f808878209e"
+      "source_sha256": "22623642f99ba633a4599e17ae44467d0e33323482dea47155203d44f569a90d"
     },
     {
       "destination": "references/docs/engineering-lessons.md",
-      "projected_sha256": "13eb6e58a67df811b2f84467040fc047cab49c32ca9ea9193e74c45e7b146050",
+      "projected_sha256": "24838a4937ed775c08aa5a79ab101e16e9334ba6cdd10023460efa5b598a96f8",
       "source": "docs/engineering-lessons.md",
-      "source_sha256": "684cea99837b7a09c0acf28038d85033865e4120ee479719029a9540e74c9b13"
+      "source_sha256": "1e5f565217947a631830f6a04894dd0d6c20da8287e48680bc2bb3cf21739250"
     },
     {
       "destination": "references/docs/helper-protocol.md",
@@ -75,15 +111,15 @@
     },
     {
       "destination": "references/docs/implementation-plan.md",
-      "projected_sha256": "632a4519819128b23f714512e03ed53268580d2abbe3e070d2c5636d53e681c0",
+      "projected_sha256": "5d1ad30c08d7c94ccc77dead110be4b1665500b99058d52e54cb6b5e24cbdc68",
       "source": "docs/implementation-plan.md",
-      "source_sha256": "3b741c1b550bfc998181d36344e686a9d515ab3bd3a36ac3f6474cb79c59ddb3"
+      "source_sha256": "7ee47984f7e2f8bc8c99f72a246499c9a0885730154721cc6073e7e9144cf543"
     },
     {
       "destination": "references/docs/installation.md",
-      "projected_sha256": "06cd32467371e9a352984e549d087198fc0b775649674411e57d4211840845dd",
+      "projected_sha256": "19dfa8cf5e84321dc4e73b088cf467f2b22b52a6760c41e468cc52602da7f418",
       "source": "docs/installation.md",
-      "source_sha256": "c443b1beafcc33e2cf9c92ad760cad32ba4fc172ab398929757cb5ea37045221"
+      "source_sha256": "14476fc469fe1a1c7daba6ae57edc5fba738db9fa8dc6fe886403ab60c6c658a"
     }
   ],
   "generator": "scripts/distribution/skill-docs.py",

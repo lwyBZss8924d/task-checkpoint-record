@@ -1,3 +1,3 @@
 #!/bin/sh
 set -eu
-exec /usr/local/bin/node /opt/ultrafast-atif-helper/bin/ultrafast-atif-helper.mjs "$@"
+exec /usr/bin/env -u NODE_OPTIONS /usr/local/bin/node /opt/ultrafast-atif-helper/bin/ultrafast-atif-helper.mjs "$@"
