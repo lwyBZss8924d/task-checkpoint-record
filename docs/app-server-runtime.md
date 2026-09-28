@@ -26,6 +26,11 @@ catalog, sends `allowProviderModelFallback: false`, and rejects a thread respons
 with different model or effort. These observations describe selected thread
 configuration, not independently measured per-token backend execution.
 
+The optional `usage` field preserves the last observed native
+`tokenUsage.last` snapshot. It does not establish cumulative thread, turn or
+provider-billing totals. Preserve that scope when exporting or aggregating
+receipts; cached-input and reasoning-output fields are subsets, not extra tokens.
+
 `dataClass` must be `synthetic` or `redacted`. This is a caller assertion, not a
 redaction algorithm. The preparation/approval boundary must establish it before
 calling the adapter; labelling private RAW as `redacted` does not sanitize it.

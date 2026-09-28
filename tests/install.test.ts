@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { BUN_CONFIG_RELATIVE, OWNER, ReceiptOperationError, applyPlan, artifactCommand, canonical, checkedJSON, fileHash, planBuiltArtifacts, prepareBundlePlan, preparePlan, rollbackInstall, sha, shellQuote, verifyInstall, verifyManifest, verifyReleaseBundle, withReceipt, type Manifest, type ReleaseBundle } from "../scripts/install-cli.ts";
+import { BUN_CONFIG_RELATIVE, OWNER, ReceiptOperationError, absolute, applyPlan, artifactCommand, canonical, checkedJSON, fileHash, planBuiltArtifacts, prepareBundlePlan, preparePlan, readSafe, rollbackInstall, sha, shellQuote, verifyInstall, verifyManifest, verifyReleaseBundle, withReceipt, type Manifest, type ReleaseBundle } from "../scripts/install-cli.ts";
 import { createHookPlan } from "../scripts/hook-plan.ts";
 
 const roots: string[] = [];
@@ -53,6 +53,28 @@ function bundleFixture(realSources = false) {
     compatibility: { helper_page_schema: "ultrafast-atif.page.v1", recorder_help_schema: "task-checkpoint-record.help.v1" } };
   const manifest = join(bundleRoot, "release-bundle.json"), save = () => { const data = JSON.stringify(release) + "\n"; writeFileSync(manifest, data, { mode: 0o644 }); return sha(data); };
   return { p, prefix, bundleRoot, helper, release, manifest, save, digest: save() };
+}
+const publicAuthCommand = "integrations/plugins/claude/task-checkpoint-record/commands/auth.md";
+function addBundleFile(f: ReturnType<typeof bundleFixture>, path: string, body = "SYNTHETIC PUBLIC DOCUMENT\n", listed = true) {
+  const full = join(f.bundleRoot, path), bytes = Buffer.from(body); mkdirSync(dirname(full), { recursive: true, mode: 0o700 }); writeFileSync(full, bytes, { mode: 0o644 });
+  const entry = { path, sha256: sha(bytes), size: bytes.length, mode: 0o644 };
+  if (listed) (path.startsWith("vendor/ultrafast-atif-helper/") ? f.release.helper : f.release.recorder).files.push(entry);
+  return entry;
+}
+function standalonePublicCommandBundle() {
+  const f = bundleFixture();
+  // Contained synthetic build inputs: no sibling helper checkout is needed.
+  const files: Record<string, string> = {
+    "tsconfig.json": "{}\n", "bin/task-checkpoint-record": "#!/bin/sh\nexit 0\n",
+    [BUN_CONFIG_RELATIVE]: "# Synthetic owned runtime config.\n",
+    "src/cli.ts": 'process.stdout.write(JSON.stringify({name:"task-checkpoint-record",commands:{help:"synthetic fixture"}})+"\\n");\n',
+    "vendor/ultrafast-atif-helper/tsconfig.json": "{}\n",
+    "vendor/ultrafast-atif-helper/bin/ultrafast-atif-helper.mjs": 'import {main} from "../dist/helper/cli.js";await main();\n',
+    "vendor/ultrafast-atif-helper/src/helper/cli.ts": 'export async function main(){process.stdout.write(JSON.stringify({schema_version:"ultrafast-atif.cli.v1",commands:{help:"synthetic fixture"}})+"\\n");}\n',
+    [publicAuthCommand]: "---\ndescription: Public authentication workflow guidance\n---\nUse the explicit official device authentication command.\n"
+  };
+  for (const [path, body] of Object.entries(files)) addBundleFile(f, path, body);
+  return { ...f, digest: f.save() };
 }
 afterEach(() => { for (const p of roots.splice(0)) rmSync(p, { force: true, recursive: true }); });
 function cliEffect(command: "apply" | "rollback", value: unknown, p: string, output: string) {
@@ -304,6 +326,49 @@ describe("owned immutable CLI installation", () => {
     expect(checked.helper.source.commit).toBe("2".repeat(40)); expect(checked.helper.license.spdx).toBe("MIT");
     expect(() => verifyReleaseBundle(f.bundleRoot, "0".repeat(64))).toThrow("reviewed_plan_changed");
     f.release.helper.source.commit = "main"; expect(() => verifyReleaseBundle(f.bundleRoot, f.save())).toThrow("invalid_release_component");
+  });
+  test("standalone inventory-pinned public Claude auth.md bundle installs both commands without a helper checkout", () => {
+    const f = standalonePublicCommandBundle(), full = join(f.bundleRoot, publicAuthCommand);
+    // The exception belongs to reviewed release verification, never generic I/O.
+    for (const read of [absolute, readSafe, fileHash]) expect(() => read(full)).toThrow("credential_path_denied");
+    const node = spawnSync("node", ["-p", "process.execPath"], { encoding: "utf8" }); expect(node.status).toBe(0);
+    const plan = prepareBundlePlan({ bundleRoot: f.bundleRoot, bundleSha256: f.digest, prefix: f.prefix, stage: join(f.p, "build"), bun: realpathSync(process.execPath), node: realpathSync(node.stdout.trim()) });
+    expect(plan.manifest.distribution!.release.recorder.files.find(entry => entry.path === publicAuthCommand)?.sha256).toBe(sha(readFileSync(full)));
+    const receipt = applyPlan(plan); expect(verifyInstall(f.prefix).verified).toBe(true);
+    for (const name of ["task-checkpoint-record", "ultrafast-atif-helper"]) {
+      const result = spawnSync(join(f.prefix, name), ["--help"], { cwd: f.p, env: { PATH: "/usr/bin:/bin" }, encoding: "utf8" });
+      expect(result.status).toBe(0); expect(JSON.parse(result.stdout).commands.help).toBe("synthetic fixture");
+    }
+    expect(rollbackInstall(receipt).restored).toBe(true);
+  }, 60000);
+  test("public Claude auth document exception rejects credentials, foreign contexts and unlisted documents", () => {
+    for (const path of [
+      "auth.json", ".env", ".env.local", "secrets.json", "token.json", "private.key", "docs/auth.md",
+      "integrations/plugins/claude/task-checkpoint-record/commands/auth.json",
+      "integrations/plugins/claude/task-checkpoint-record/commands/auth.md.backup",
+      "integrations/plugins/claude/another-plugin/commands/auth.md",
+      `vendor/ultrafast-atif-helper/${publicAuthCommand}`
+    ]) {
+      const f = bundleFixture(); addBundleFile(f, path);
+      expect(() => verifyReleaseBundle(f.bundleRoot, f.save())).toThrow("credential_path_denied");
+    }
+    const unlisted = bundleFixture(); addBundleFile(unlisted, publicAuthCommand, "SYNTHETIC UNLISTED\n", false);
+    expect(() => verifyReleaseBundle(unlisted.bundleRoot, unlisted.save())).toThrow("credential_path_denied");
+    const wrongDigest = bundleFixture(); addBundleFile(wrongDigest, publicAuthCommand);
+    expect(() => verifyReleaseBundle(wrongDigest.bundleRoot, "0".repeat(64))).toThrow("reviewed_plan_changed");
+  });
+  test("public Claude auth document stays a regular unaliased file with exact reviewed bytes", () => {
+    const changed = bundleFixture(); addBundleFile(changed, publicAuthCommand); const digest = changed.save();
+    writeFileSync(join(changed.bundleRoot, publicAuthCommand), "CHANGED\n");
+    expect(() => verifyReleaseBundle(changed.bundleRoot, digest)).toThrow("release_file_changed");
+    const linked = bundleFixture(); addBundleFile(linked, publicAuthCommand); const linkDigest = linked.save();
+    linkSync(join(linked.bundleRoot, publicAuthCommand), join(linked.p, "public-doc-hardlink"));
+    expect(() => verifyReleaseBundle(linked.bundleRoot, linkDigest)).toThrow("unsafe_release_file");
+    for (const kind of ["symlink", "directory"] as const) {
+      const f = bundleFixture(); addBundleFile(f, publicAuthCommand); const pinned = f.save(), full = join(f.bundleRoot, publicAuthCommand); rmSync(full);
+      if (kind === "symlink") symlinkSync(join(f.bundleRoot, "LICENSE"), full); else mkdirSync(full);
+      expect(() => verifyReleaseBundle(f.bundleRoot, pinned)).toThrow(kind === "symlink" ? "symlink_denied" : "unsafe_release_file");
+    }
   });
   test("bundled helper modification, private extras and escaped inventory paths fail before build", () => {
     const f = bundleFixture(); writeFileSync(join(f.helper, "LICENSE"), "changed"); expect(() => verifyReleaseBundle(f.bundleRoot, f.digest)).toThrow("release_file_changed");

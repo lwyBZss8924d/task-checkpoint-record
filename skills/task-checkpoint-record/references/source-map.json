@@ -45,9 +45,9 @@
     },
     {
       "destination": "references/docs/agent-runtime.md",
-      "projected_sha256": "d6f44dee7a01d8a3d20874ede3c97de4b505cba979c6bae353122e0ae4c9e634",
+      "projected_sha256": "a8370808e9b05318936fa22a68255650a618951c18f224bcb68988042255f8bd",
       "source": "docs/agent-runtime.md",
-      "source_sha256": "963c25c183b616aa7dbd4a3953f7ef980643ac6caf7744f61e2f35b120f48cfb"
+      "source_sha256": "74760639a1b64c87d71bb079b08664a18723430f159dbcb1f1d4efa5b149791a"
     },
     {
       "destination": "references/docs/agent-service.md",
@@ -63,9 +63,9 @@
     },
     {
       "destination": "references/docs/app-server-runtime.md",
-      "projected_sha256": "f8a2db60cd37c9359bf09d9ce3a950ed886a816a78a87ae3e66dcd583926bed1",
+      "projected_sha256": "e7bbcd7afa04d7b44c45459b10ea9972e22c1dcb5f83ccfa5eaa2d5a17729ddf",
       "source": "docs/app-server-runtime.md",
-      "source_sha256": "3ac7a8c0bde298923a2778071548e828c5318e3d65f68604b8d337d94067b628"
+      "source_sha256": "f19dd33223c0a3d6be9d9bafac4cfad08e2bf127782276a7496be5df46b91b6d"
     },
     {
       "destination": "references/docs/architecture.md",
@@ -99,9 +99,9 @@
     },
     {
       "destination": "references/docs/engineering-lessons.md",
-      "projected_sha256": "24838a4937ed775c08aa5a79ab101e16e9334ba6cdd10023460efa5b598a96f8",
+      "projected_sha256": "39d48802d701c800f3090d5968afb2c2245d9d5891a45c0a3df4a1f6e854f816",
       "source": "docs/engineering-lessons.md",
-      "source_sha256": "1e5f565217947a631830f6a04894dd0d6c20da8287e48680bc2bb3cf21739250"
+      "source_sha256": "daa7c5bde91913533b5df5e747ab1241064cdda8ebffc71ac742c2683843e24d"
     },
     {
       "destination": "references/docs/helper-protocol.md",

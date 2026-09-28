@@ -49,7 +49,11 @@ export function readSafe(p: string, cap = CAP): Buffer {
   } finally { closeSync(fd); }
 }
 export function fileHash(p: string): string {
-  safePath(p); const fd = openSync(p, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  safePath(p); return hashRegularFile(p);
+}
+/** Callers must validate the full path first; descriptor checks still reject aliases. */
+function hashRegularFile(p: string): string {
+  const fd = openSync(p, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const s = fstatSync(fd); if (!s.isFile() || s.nlink !== 1 || s.size > 512 * 1024 * 1024) fail("unsafe_hash_input");
     const h = createHash("sha256"), buffer = Buffer.alloc(1024 * 1024); let offset = 0;
@@ -210,18 +214,29 @@ export function verifyReleaseBundle(root: string, expectedManifestSha: string): 
   }
   // Enumerate names before reading contents, so unexpected private files are
   // rejected without hashing or copying their contents into an installation.
+  const releasePath = (rel: string): string => {
+    const path = join(root, rel);
+    // This public command document is admitted only in the exact recorder
+    // inventory reviewed above. Generic paths and credential guards stay strict.
+    if (rel === "integrations/plugins/claude/task-checkpoint-record/commands/auth.md" && expected.has(rel)) {
+      safePath(dirname(path)); const s = lstatSync(path);
+      if (s.isSymbolicLink()) fail("symlink_denied");
+      if (!s.isFile() || s.nlink !== 1) fail("unsafe_release_file");
+    } else safePath(path);
+    return path;
+  };
   const seen = new Set<string>(); let directories = 0;
   const walk = (dir: string, depth: number) => {
     if (depth > 32 || ++directories > 4096) fail("bundle_directory_budget");
     for (const name of readdirSync(join(root, dir))) {
-      const rel = dir ? `${dir}/${name}` : name, path = join(root, rel); relativeFile(rel); safePath(path); const s = lstatSync(path);
+      const rel = dir ? `${dir}/${name}` : name; relativeFile(rel); const path = releasePath(rel), s = lstatSync(path);
       if (s.isDirectory()) walk(rel, depth + 1);
       else { if (!s.isFile() || s.nlink !== 1) fail("unsafe_release_file"); if (rel !== "release-bundle.json" && !expected.has(rel)) fail("unexpected_release_file"); seen.add(rel); }
     }
   };
   walk("", 0);
   if (seen.size !== expected.size + 1) fail("release_file_missing");
-  for (const [path, f] of expected) { const full = join(root, path), s = lstatSync(full); if (s.size !== f.size || (s.mode & 0o777) !== f.mode || fileHash(full) !== f.sha256) fail("release_file_changed"); }
+  for (const [path, f] of expected) { const full = releasePath(path), s = lstatSync(full); if (s.size !== f.size || (s.mode & 0o777) !== f.mode || hashRegularFile(full) !== f.sha256) fail("release_file_changed"); }
   for (const component of [release.recorder, release.helper]) {
     const pkgPath = component.root === "." ? "package.json" : `${component.root}/package.json`;
     if (!expected.has(pkgPath)) fail("release_package_missing"); const pkg = json(join(root, pkgPath));

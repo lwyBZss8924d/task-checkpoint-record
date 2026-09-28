@@ -53,6 +53,14 @@ Only one turn may be active per session. Model defaults remain supervisor
 Model/effort fallback is disabled; unavailable auth/model/configuration fails.
 The dedicated home and protected-home checks are shared with the text adapter.
 
+The result's optional `usage` is the last observed
+`thread/tokenUsage/updated.tokenUsage.last` snapshot. It is not the cumulative
+thread total or a complete accounting of every model request within a tool-using
+turn. Do not sum these snapshots and label the result total run cost or tokens.
+Cached-input and reasoning-output counts are subsets of input/output, respectively.
+Native `turn/start` reservations are a separate budget from backend request or
+token accounting; absent totals remain unavailable.
+
 Cancellation, an expired turn/tool deadline, transport failure or a contradictory
 terminal notification poisons the session and closes it. There is no automatic
 retry or native resume. `AgentRuntimeError` retains observed IDs,
