@@ -1,0 +1,22 @@
+{
+  "name": "task-checkpoint-record",
+  "version": "0.1.0",
+  "description": "Client hooks and task checkpoint workflows; explicit configuration and activation required.",
+  "author": {
+    "name": "Task Checkpoint contributors"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/lwyBZss8924d/task-checkpoint-record",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Task Checkpoint Record",
+    "shortDescription": "Client hooks and task checkpoint workflows; explicit configuration and activation required.",
+    "longDescription": "Client hooks and task checkpoint workflows; explicit configuration and activation required. Bundled hooks perform bounded local admission only; model work requires a separately activated service.",
+    "developerName": "Task Checkpoint contributors",
+    "category": "Developer Tools",
+    "capabilities": [],
+    "defaultPrompt": [
+      "Configure one source binding and inspect its local checkpoint metadata."
+    ]
+  }
+}

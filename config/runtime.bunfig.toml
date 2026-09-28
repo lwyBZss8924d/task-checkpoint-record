@@ -1,0 +1,3 @@
+# Owned task-checkpoint-record runtime configuration.
+# Intentionally contains no preloads or inherited project configuration.
+# Launch with --no-env-file --no-install --config=ABS_PATH_TO_THIS_FILE.

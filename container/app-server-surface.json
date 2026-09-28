@@ -1,0 +1,1151 @@
+{
+  "schema_version": "task-checkpoint-record.app-server-surface.v1",
+  "version_authority": {
+    "module": "src/model-policy.ts",
+    "export": "SUPPORTED_CODEX_VERSIONS",
+    "must_equal": [
+      "0.157.1",
+      "0.158.0"
+    ]
+  },
+  "supported_versions": [
+    "0.157.1",
+    "0.158.0"
+  ],
+  "comparison": {
+    "root_type": "object",
+    "required": "Exact sorted set; missing schema.required is an empty set.",
+    "checks": "Resolve RFC6901 pointer, recursively remove annotation keys below, compare canonical JSON values exactly (booleans are distinct from numbers). Missing pointers fail.",
+    "ignored_annotation_keys": [
+      "$comment",
+      "default",
+      "description",
+      "examples",
+      "title"
+    ],
+    "version_gate": "Reject versions outside supported_versions before declaring success; contract versions must equal version_authority export.",
+    "success_claim": "protocol_surface_pass only; no authentication, native-model, tool-isolation, container-runtime or release acceptance."
+  },
+  "schemas": [
+    {
+      "file": "v1/InitializeParams.json",
+      "required": [
+        "clientInfo"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/clientInfo",
+          "equals": {
+            "$ref": "#/definitions/ClientInfo"
+          }
+        },
+        {
+          "pointer": "/properties/capabilities",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/InitializeCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/definitions/ClientInfo/properties/name",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/ClientInfo/properties/version",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/InitializeCapabilities/properties/experimentalApi",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/definitions/InitializeCapabilities/properties/explicitGatewayOauth",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/definitions/InitializeCapabilities/properties/requestAttestation",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/definitions/InitializeCapabilities/properties/optOutNotificationMethods",
+          "equals": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "file": "v1/InitializeResponse.json",
+      "required": [
+        "codexHome",
+        "platformFamily",
+        "platformOs",
+        "userAgent"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/userAgent",
+          "equals": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/ThreadStartParams.json",
+      "required": [],
+      "checks": [
+        {
+          "pointer": "/properties/model",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/modelProvider",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/allowProviderModelFallback",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/properties/cwd",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/approvalPolicy",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AskForApproval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/approvalsReviewer",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ApprovalsReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/sandbox",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/SandboxMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/environments",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/TurnEnvironmentParams"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/dynamicTools",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/DynamicToolSpec"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/selectedCapabilityRoots",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/SelectedCapabilityRoot"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/ephemeral",
+          "equals": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/config",
+          "equals": {
+            "additionalProperties": true,
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/developerInstructions",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/definitions/SandboxMode",
+          "equals": {
+            "enum": [
+              "read-only",
+              "workspace-write",
+              "danger-full-access"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/ApprovalsReviewer",
+          "equals": {
+            "enum": [
+              "user",
+              "auto_review",
+              "guardian_subagent"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/required",
+          "equals": [
+            "description",
+            "inputSchema",
+            "name",
+            "type"
+          ]
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/type",
+          "equals": {
+            "enum": [
+              "function"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/name",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/description",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/inputSchema",
+          "equals": true
+        },
+        {
+          "pointer": "/definitions/DynamicToolSpec/oneOf/0/properties/deferLoading",
+          "equals": {
+            "type": "boolean"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/ThreadStartResponse.json",
+      "required": [
+        "approvalPolicy",
+        "approvalsReviewer",
+        "cwd",
+        "model",
+        "modelProvider",
+        "sandbox",
+        "thread"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/thread",
+          "equals": {
+            "$ref": "#/definitions/Thread"
+          }
+        },
+        {
+          "pointer": "/properties/model",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/modelProvider",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/reasoningEffort",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ReasoningEffort"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/cwd",
+          "equals": {
+            "$ref": "#/definitions/AbsolutePathBuf"
+          }
+        },
+        {
+          "pointer": "/properties/approvalPolicy",
+          "equals": {
+            "$ref": "#/definitions/AskForApproval"
+          }
+        },
+        {
+          "pointer": "/properties/approvalsReviewer",
+          "equals": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/ApprovalsReviewer"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/sandbox",
+          "equals": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/SandboxPolicy"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/definitions/Thread/properties/id",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/Thread/properties/sessionId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/Thread/properties/path",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/definitions/Thread/properties/ephemeral",
+          "equals": {
+            "type": "boolean"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/TurnStartParams.json",
+      "required": [
+        "input",
+        "threadId"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/threadId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/cwd",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/model",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/effort",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ReasoningEffort"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/approvalPolicy",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AskForApproval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/approvalsReviewer",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ApprovalsReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/sandboxPolicy",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/SandboxPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/environments",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/TurnEnvironmentParams"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/summary",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ReasoningSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/input",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/UserInput"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "pointer": "/properties/outputSchema",
+          "equals": {}
+        },
+        {
+          "pointer": "/definitions/ReasoningEffort",
+          "equals": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/ReasoningSummary",
+          "equals": {
+            "oneOf": [
+              {
+                "enum": [
+                  "auto",
+                  "concise",
+                  "detailed"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "none"
+                ],
+                "type": "string"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/definitions/UserInput/oneOf/0",
+          "equals": {
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "text_elements": {
+                "items": {
+                  "$ref": "#/definitions/TextElement"
+                },
+                "type": "array"
+              },
+              "type": {
+                "enum": [
+                  "text"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "type"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/TurnStartResponse.json",
+      "required": [
+        "turn"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/turn",
+          "equals": {
+            "$ref": "#/definitions/Turn"
+          }
+        },
+        {
+          "pointer": "/definitions/Turn/properties/id",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/Turn/properties/status",
+          "equals": {
+            "$ref": "#/definitions/TurnStatus"
+          }
+        },
+        {
+          "pointer": "/definitions/Turn/properties/items",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/ThreadItem"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "pointer": "/definitions/TurnStatus",
+          "equals": {
+            "enum": [
+              "completed",
+              "interrupted",
+              "failed",
+              "inProgress"
+            ],
+            "type": "string"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/TurnInterruptParams.json",
+      "required": [
+        "threadId",
+        "turnId"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/threadId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/turnId",
+          "equals": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/GetAccountParams.json",
+      "required": [],
+      "checks": [
+        {
+          "pointer": "/properties/refreshToken",
+          "equals": {
+            "type": "boolean"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/GetAccountResponse.json",
+      "required": [
+        "requiresOpenaiAuth"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/account",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/Account"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/requiresOpenaiAuth",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/definitions/Account/oneOf/1/properties/type",
+          "equals": {
+            "enum": [
+              "chatgpt"
+            ],
+            "type": "string"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/ModelListParams.json",
+      "required": [],
+      "checks": [
+        {
+          "pointer": "/properties/limit",
+          "equals": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/includeHidden",
+          "equals": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/cursor",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/ModelListResponse.json",
+      "required": [
+        "data"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/data",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/Model"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "pointer": "/properties/nextCursor",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/definitions/Model/properties/model",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/Model/properties/supportedReasoningEfforts",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/ReasoningEffortOption"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "pointer": "/definitions/ReasoningEffortOption/properties/reasoningEffort",
+          "equals": {
+            "$ref": "#/definitions/ReasoningEffort"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/TurnCompletedNotification.json",
+      "required": [
+        "threadId",
+        "turn"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/threadId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/turn",
+          "equals": {
+            "$ref": "#/definitions/Turn"
+          }
+        },
+        {
+          "pointer": "/definitions/Turn/properties/id",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/Turn/properties/status",
+          "equals": {
+            "$ref": "#/definitions/TurnStatus"
+          }
+        },
+        {
+          "pointer": "/definitions/Turn/properties/items",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/ThreadItem"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "pointer": "/definitions/TurnStatus",
+          "equals": {
+            "enum": [
+              "completed",
+              "interrupted",
+              "failed",
+              "inProgress"
+            ],
+            "type": "string"
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/ItemCompletedNotification.json",
+      "required": [
+        "completedAtMs",
+        "item",
+        "threadId",
+        "turnId"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/threadId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/turnId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/item",
+          "equals": {
+            "$ref": "#/definitions/ThreadItem"
+          }
+        },
+        {
+          "pointer": "/definitions/ThreadItem/oneOf/2/properties/type",
+          "equals": {
+            "enum": [
+              "agentMessage"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/ThreadItem/oneOf/2/properties/id",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/ThreadItem/oneOf/2/properties/text",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/ThreadItem/oneOf/2/properties/phase",
+          "equals": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/MessagePhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "pointer": "/definitions/MessagePhase",
+          "equals": {
+            "oneOf": [
+              {
+                "enum": [
+                  "commentary"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "final_answer"
+                ],
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/ThreadTokenUsageUpdatedNotification.json",
+      "required": [
+        "threadId",
+        "tokenUsage",
+        "turnId"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/threadId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/turnId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/tokenUsage",
+          "equals": {
+            "$ref": "#/definitions/ThreadTokenUsage"
+          }
+        },
+        {
+          "pointer": "/definitions/ThreadTokenUsage/properties/last",
+          "equals": {
+            "$ref": "#/definitions/TokenUsageBreakdown"
+          }
+        },
+        {
+          "pointer": "/definitions/TokenUsageBreakdown/properties/totalTokens",
+          "equals": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        {
+          "pointer": "/definitions/TokenUsageBreakdown/properties/inputTokens",
+          "equals": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        {
+          "pointer": "/definitions/TokenUsageBreakdown/properties/cachedInputTokens",
+          "equals": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        {
+          "pointer": "/definitions/TokenUsageBreakdown/properties/outputTokens",
+          "equals": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        {
+          "pointer": "/definitions/TokenUsageBreakdown/properties/reasoningOutputTokens",
+          "equals": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        {
+          "pointer": "/definitions/TokenUsageBreakdown/properties/cacheWriteInputTokens",
+          "equals": {
+            "format": "int64",
+            "type": "integer"
+          }
+        }
+      ]
+    },
+    {
+      "file": "DynamicToolCallParams.json",
+      "required": [
+        "arguments",
+        "callId",
+        "threadId",
+        "tool",
+        "turnId"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/threadId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/turnId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/callId",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/namespace",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "pointer": "/properties/tool",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/properties/arguments",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "file": "DynamicToolCallResponse.json",
+      "required": [
+        "contentItems",
+        "success"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/contentItems",
+          "equals": {
+            "items": {
+              "$ref": "#/definitions/DynamicToolCallOutputContentItem"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "pointer": "/properties/success",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolCallOutputContentItem/oneOf/0/properties/type",
+          "equals": {
+            "enum": [
+              "inputText"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolCallOutputContentItem/oneOf/0/properties/text",
+          "equals": {
+            "type": "string"
+          }
+        },
+        {
+          "pointer": "/definitions/DynamicToolCallOutputContentItem/oneOf/0/required",
+          "equals": [
+            "text",
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "v2/ConfigReadParams.json",
+      "required": [],
+      "checks": [
+        {
+          "pointer": "/properties/includeLayers",
+          "equals": {
+            "type": "boolean"
+          }
+        },
+        {
+          "pointer": "/properties/cwd",
+          "equals": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "file": "v2/ConfigReadResponse.json",
+      "required": [
+        "config",
+        "origins"
+      ],
+      "checks": [
+        {
+          "pointer": "/properties/config",
+          "equals": {
+            "$ref": "#/definitions/Config"
+          }
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "initialize response precedes initialized notification; initialized uses an empty params object and has no separate entry in this selected type subset.",
+    "Newer unreviewed versions remain unsupported even if these selected schemas match.",
+    "Only fields actually read/sent plus selected nested status/identity/usage contracts are included; this is not the whole public protocol.",
+    "The0.158.0 flexUnavailable and promax enum additions are outside consumed error/plan fields; full version-specific schema comparison is retained separately.",
+    "Resident agent runtime additionally uses flat function dynamicTools, item/tool/call with inputText responses, and config/read to refuse effective configured MCP servers; native universal tool prevention is not asserted."
+  ]
+}

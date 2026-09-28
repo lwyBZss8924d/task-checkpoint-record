@@ -1,0 +1,143 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 2,
+            "async": false,
+            "command": "/usr/bin/env",
+            "args": [
+              "-u",
+              "BUN_OPTIONS",
+              "-u",
+              "NODE_OPTIONS",
+              "bun",
+              "--no-env-file",
+              "--no-install",
+              "--config=${CLAUDE_PLUGIN_ROOT}/runtime/recorder/config/runtime.bunfig.toml",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.ts"
+            ]
+          }
+        ],
+        "matcher": "startup|resume|clear|compact"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 2,
+            "async": false,
+            "command": "/usr/bin/env",
+            "args": [
+              "-u",
+              "BUN_OPTIONS",
+              "-u",
+              "NODE_OPTIONS",
+              "bun",
+              "--no-env-file",
+              "--no-install",
+              "--config=${CLAUDE_PLUGIN_ROOT}/runtime/recorder/config/runtime.bunfig.toml",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.ts"
+            ]
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 2,
+            "async": false,
+            "command": "/usr/bin/env",
+            "args": [
+              "-u",
+              "BUN_OPTIONS",
+              "-u",
+              "NODE_OPTIONS",
+              "bun",
+              "--no-env-file",
+              "--no-install",
+              "--config=${CLAUDE_PLUGIN_ROOT}/runtime/recorder/config/runtime.bunfig.toml",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.ts"
+            ]
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 2,
+            "async": false,
+            "command": "/usr/bin/env",
+            "args": [
+              "-u",
+              "BUN_OPTIONS",
+              "-u",
+              "NODE_OPTIONS",
+              "bun",
+              "--no-env-file",
+              "--no-install",
+              "--config=${CLAUDE_PLUGIN_ROOT}/runtime/recorder/config/runtime.bunfig.toml",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.ts"
+            ]
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 1,
+            "async": false,
+            "command": "/usr/bin/env",
+            "args": [
+              "-u",
+              "BUN_OPTIONS",
+              "-u",
+              "NODE_OPTIONS",
+              "bun",
+              "--no-env-file",
+              "--no-install",
+              "--config=${CLAUDE_PLUGIN_ROOT}/runtime/recorder/config/runtime.bunfig.toml",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.ts"
+            ]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 2,
+            "async": false,
+            "command": "/usr/bin/env",
+            "args": [
+              "-u",
+              "BUN_OPTIONS",
+              "-u",
+              "NODE_OPTIONS",
+              "bun",
+              "--no-env-file",
+              "--no-install",
+              "--config=${CLAUDE_PLUGIN_ROOT}/runtime/recorder/config/runtime.bunfig.toml",
+              "${CLAUDE_PLUGIN_ROOT}/scripts/hook.ts"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

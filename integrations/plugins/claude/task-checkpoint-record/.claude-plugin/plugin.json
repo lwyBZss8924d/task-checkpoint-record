@@ -1,0 +1,10 @@
+{
+  "name": "task-checkpoint-record",
+  "version": "0.1.0",
+  "description": "Client hooks and task checkpoint workflows; explicit configuration and activation required.",
+  "author": {
+    "name": "Task Checkpoint contributors"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/lwyBZss8924d/task-checkpoint-record"
+}

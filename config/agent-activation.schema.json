@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Explicit native agent activation admission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "activation_id",
+    "binding_id",
+    "daemon_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "task-checkpoint-record.agent-activation.v1"
+    },
+    "activation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "binding_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "daemon_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "Host task objective; at most 4096 UTF-8 bytes. It cannot extend host tool, source, credential or scoring authority."
+    },
+    "include_existing_windows": {
+      "type": "boolean",
+      "default": false
+    },
+    "model_profile": {
+      "enum": [
+        "production",
+        "eval"
+      ],
+      "default": "production"
+    },
+    "selected_record_handles": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "Reserved and empty in metadata/prepared-fragment policy; owner-selected RAW transport is unsupported."
+    },
+    "prepared_fragments": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fragment_handle",
+          "record_handle",
+          "data_class",
+          "text",
+          "sha256",
+          "admission_ref"
+        ],
+        "properties": {
+          "fragment_handle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "record_handle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "data_class": {
+            "enum": [
+              "synthetic",
+              "redacted"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 32768
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "admission_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      }
+    },
+    "prepared_packets": {
+      "type": "array",
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "packet_handle",
+          "packet_sha256",
+          "prepared",
+          "admission_ref",
+          "attempt_budget"
+        ],
+        "properties": {
+          "packet_handle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "packet_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "prepared": {
+            "type": "object"
+          },
+          "admission_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "attempt_budget": {
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "result": {}
+        }
+      }
+    },
+    "stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "advisory",
+            "strict_once"
+          ]
+        },
+        "max_age_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000
+        }
+      }
+    }
+  },
+  "description": "Host-supplied admission only. Text labels are assertions by the preparer, never proof of sanitization. Existing windows require explicit opt-in; daemon/model start is separate."
+}

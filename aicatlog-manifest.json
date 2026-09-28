@@ -1,0 +1,30 @@
+{
+  "schema_version": "aicatlog.registry.v1",
+  "scopes": [
+    {
+      "id": "project",
+      "root": ".",
+      "kind": "repo",
+      "manifests": [
+        "docs/resources.json"
+      ],
+      "excludes": [
+        ".git",
+        "vendor",
+        "node_modules",
+        "target",
+        "dist",
+        ".cache",
+        ".local",
+        "runs",
+        "handoff",
+        "artifacts"
+      ],
+      "content_index": false,
+      "discovery": "manifest"
+    }
+  ],
+  "skills": [],
+  "resources": [],
+  "settings": {}
+}

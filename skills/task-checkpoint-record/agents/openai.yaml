@@ -1,0 +1,3 @@
+interface:
+  display_name: "task-checkpoint-record"
+  short_description: "Bounded local task trajectory workflows"

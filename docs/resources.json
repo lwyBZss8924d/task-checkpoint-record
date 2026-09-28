@@ -1,0 +1,107 @@
+{
+  "schema_version": "aicatlog.resources.v1",
+  "resources": [
+    {
+      "id": "entry",
+      "kind": "context",
+      "path": "../llms.txt",
+      "when": "Use the selected task-checkpoint-record entry contract"
+    },
+    {
+      "id": "contract",
+      "kind": "context",
+      "path": "../AGENTS.md",
+      "when": "Use the selected task-checkpoint-record contract contract"
+    },
+    {
+      "id": "specification",
+      "kind": "context",
+      "path": "../SPEC.md",
+      "when": "Use the selected task-checkpoint-record specification contract"
+    },
+    {
+      "id": "skill",
+      "kind": "skill",
+      "path": "../skills/task-checkpoint-record/SKILL.md",
+      "when": "Use the selected task-checkpoint-record skill contract"
+    },
+    {
+      "id": "distribution",
+      "kind": "context",
+      "path": "distribution.md",
+      "when": "Use the selected task-checkpoint-record distribution contract"
+    },
+    {
+      "id": "architecture",
+      "kind": "context",
+      "path": "architecture.md",
+      "when": "Use the selected task-checkpoint-record architecture contract"
+    },
+    {
+      "id": "installation",
+      "kind": "context",
+      "path": "installation.md",
+      "when": "Use the selected task-checkpoint-record installation contract"
+    },
+    {
+      "id": "runtime",
+      "kind": "context",
+      "path": "app-server-runtime.md",
+      "when": "Use the selected task-checkpoint-record runtime contract"
+    },
+    {
+      "id": "authentication",
+      "kind": "context",
+      "path": "authentication.md",
+      "when": "Use the selected task-checkpoint-record authentication contract"
+    },
+    {
+      "id": "helper-protocol",
+      "kind": "context",
+      "path": "helper-protocol.md",
+      "when": "Use the selected task-checkpoint-record helper-protocol contract"
+    },
+    {
+      "id": "configuration",
+      "kind": "context",
+      "path": "configuration.md",
+      "when": "Use the selected task-checkpoint-record configuration contract"
+    },
+    {
+      "id": "engineering-lessons",
+      "kind": "context",
+      "path": "engineering-lessons.md",
+      "when": "Use the selected task-checkpoint-record engineering-lessons contract"
+    },
+    {
+      "id": "agent-service",
+      "kind": "context",
+      "path": "agent-service.md",
+      "when": "Activate and operate bounded native supervision, inspect evidence, cancel or recover"
+    },
+    {
+      "id": "agent-runtime",
+      "kind": "context",
+      "path": "agent-runtime.md",
+      "when": "Inspect native dynamic tools, session ownership and transport limits"
+    },
+    {
+      "id": "agent-supervisor-plan",
+      "kind": "context",
+      "path": "agent-supervisor-plan.md",
+      "when": "Inspect frozen window, fan-out, budgets and cached review contract"
+    },
+    {
+      "id": "client-plugins",
+      "kind": "context",
+      "path": "client-plugins.md",
+      "when": "Configure Codex or Claude native Hooks and slash commands"
+    },
+    {
+      "id": "adapters-roadmap",
+      "kind": "context",
+      "path": "adapters-roadmap.md",
+      "when": "Check publication states and the Pi package extension TODO"
+    }
+  ]
+}

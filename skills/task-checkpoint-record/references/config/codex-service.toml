@@ -1,0 +1,30 @@
+# Dedicated service profile. Install only into its explicitly selected CODEX_HOME.
+# Credentials are created by `codex login --device-auth`, never copied by this tool.
+model = "gpt-6-sol"
+model_reasoning_effort = "medium"
+forced_login_method = "chatgpt"
+cli_auth_credentials_store = "file"
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+check_for_update_on_startup = false
+
+[features]
+apps = false
+hooks = false
+memories = false
+goals = false
+multi_agent = false
+shell_tool = false
+unified_exec = false
+
+[features.code_mode]
+enabled = false
+
+[otel]
+exporter = "none"
+trace_exporter = "none"
+log_user_prompt = false
+
+[analytics]
+enabled = false

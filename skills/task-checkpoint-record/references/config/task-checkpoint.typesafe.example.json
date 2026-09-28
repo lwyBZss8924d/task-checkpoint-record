@@ -1,0 +1,52 @@
+{
+  "schema_version": "task-checkpoint.config.v1",
+  "recorder": {
+    "state_dir": "./.local/task-checkpoint-record",
+    "helper_command": [
+      "ultrafast-atif-helper"
+    ],
+    "concurrency": 2,
+    "max_jobs": 64,
+    "timeout_ms": 10000,
+    "lease_ms": 30000,
+    "page_bytes": 1048576,
+    "page_limit": 100,
+    "stdout_bytes": 2097152
+  },
+  "codex": {
+    "executable": null,
+    "home": null,
+    "supervisor": {
+      "model": "gpt-6-sol",
+      "effort": "medium"
+    },
+    "semantic_worker": {
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "eval": {
+      "model": "gpt-6-luna",
+      "effort": "high"
+    }
+  },
+  "scoring": {
+    "provider": "typesafe",
+    "model": "jev-1.13.0",
+    "api_key_env": "TYPESAFE_API_KEY",
+    "limits": {
+      "deadline_ms": 20000,
+      "max_request_bytes": 65536,
+      "max_response_bytes": 1048576
+    }
+  },
+  "agent_service": {
+    "concurrency": 2,
+    "max_workers": 2,
+    "max_native_turns": 3,
+    "max_tool_calls": 64,
+    "deadline_ms": 180000,
+    "max_rounds": 2,
+    "data_policy": "metadata_only",
+    "external_score_max_calls": 0
+  }
+}

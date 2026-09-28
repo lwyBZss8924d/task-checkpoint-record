@@ -1,0 +1,22 @@
+{
+  "schema_version": "container-inputs.v1",
+  "observed_at": "2026-09-28",
+  "codex_version": "0.158.0",
+  "codex_release": "https://github.com/openai/codex/releases/tag/rust-v0.158.0",
+  "codex_assets": {
+    "amd64": {
+      "target": "x86_64-unknown-linux-musl",
+      "name": "codex-package-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "b33cd426c9acab9b34c5a93200ba4fe83c8e614c18ce5ef52b2bf36408b8e18c"
+    },
+    "arm64": {
+      "target": "aarch64-unknown-linux-musl",
+      "name": "codex-package-aarch64-unknown-linux-musl.tar.gz",
+      "sha256": "bc55b988c2e0c54ac6a6d437c4e63781e671b269752ac26592675bb9e9f99902"
+    }
+  },
+  "codex_universal": "ghcr.io/openai/codex-universal@sha256:905e512f36460e1be4cfedb30928a8a28299edb0fcd5de7998ceaa72d27fe304",
+  "bun": "oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4",
+  "node": "node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c",
+  "verification": "Release API digest and OCI manifest metadata observed; runtime tests are separate evidence."
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "task-checkpoint-record.agent-activation.v1",
+  "activation_id": "example-activation",
+  "binding_id": "example-binding",
+  "daemon_id": "example-daemon",
+  "model_profile": "production",
+  "include_existing_windows": false,
+  "prepared_fragments": [],
+  "prepared_packets": [],
+  "stop": {
+    "mode": "advisory",
+    "max_age_ms": 300000
+  },
+  "objective": "Observe the activated task window and produce evidence-linked continuity guidance."
+}
