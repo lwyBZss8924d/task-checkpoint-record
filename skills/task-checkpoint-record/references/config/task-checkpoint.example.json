@@ -1,0 +1,42 @@
+{
+  "schema_version": "task-checkpoint.config.v1",
+  "recorder": {
+    "state_dir": "./.local/task-checkpoint-record",
+    "helper_command": [
+      "ultrafast-atif-helper"
+    ],
+    "concurrency": 2,
+    "max_jobs": 64,
+    "timeout_ms": 10000,
+    "lease_ms": 30000,
+    "page_bytes": 1048576,
+    "page_limit": 100,
+    "stdout_bytes": 2097152
+  },
+  "codex": {
+    "executable": null,
+    "home": null,
+    "supervisor": {
+      "model": "gpt-6-sol",
+      "effort": "medium"
+    },
+    "semantic_worker": {
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "eval": {
+      "model": "gpt-6-luna",
+      "effort": "high"
+    }
+  },
+  "scoring": {
+    "provider": "openrouter",
+    "model": "typesafe/jev-1.13-20260917",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "limits": {
+      "deadline_ms": 20000,
+      "max_request_bytes": 65536,
+      "max_response_bytes": 1048576
+    }
+  }
+}

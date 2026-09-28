@@ -1,0 +1,56 @@
+name: Explicit contained-helper container smoke
+on:
+  workflow_dispatch:
+    inputs:
+      helper_commit:
+        description: Full published ultrafast-atif-helper commit to bundle
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      HELPER_COMMIT: ${{ inputs.helper_commit }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Validate helper identity
+        run: '[[ "$HELPER_COMMIT" =~ ^[a-f0-9]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: lwyBZss8924d/ultrafast-atif-helper
+          ref: ${{ inputs.helper_commit }}
+          path: _bundle-helper-source
+          persist-credentials: false
+      - name: Assemble committed bundle
+        run: >-
+          python3 scripts/distribution/bundle.py --recorder-repo .
+          --recorder-commit "$(git rev-parse HEAD)" --helper-repo _bundle-helper-source
+          --helper-commit "$HELPER_COMMIT" --output "$RUNNER_TEMP/bundle-artifacts"
+      - name: Unpack only the generated public bundle
+        run: |
+          mkdir "$RUNNER_TEMP/unpacked"
+          tar -xzf "$RUNNER_TEMP"/bundle-artifacts/*-bundle.tar.gz -C "$RUNNER_TEMP/unpacked" --strip-components=1
+      - name: Prepare narrow contained helper context
+        working-directory: ${{ runner.temp }}/unpacked
+        run: >-
+          python3 scripts/distribution/package.py helper-context
+          --source vendor/ultrafast-atif-helper --output "$RUNNER_TEMP/helper-context"
+      - name: Build self-contained image
+        working-directory: ${{ runner.temp }}/unpacked
+        run: >-
+          docker buildx build --load --platform linux/amd64
+          --build-context helper="$RUNNER_TEMP/helper-context"
+          -t task-checkpoint-record:ci .
+      - name: Unauthenticated no-network container checks
+        run: |
+          docker run --rm --network none task-checkpoint-record:ci --help
+          docker run --rm --network none task-checkpoint-record:ci schema binding
+          docker run --rm --network none task-checkpoint-record:ci codex --version
+          docker run --rm --network none --entrypoint /usr/local/bin/ultrafast-atif-helper task-checkpoint-record:ci --help
+          docker image inspect task-checkpoint-record:ci --format '{{json .Id}} {{json .Size}}'

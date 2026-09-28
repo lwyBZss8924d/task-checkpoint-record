@@ -1,0 +1,57 @@
+name: Explicit official Codex compatibility probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [pinned, latest]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select checksum-pinned release metadata
+        env:
+          RELEASE_MODE: ${{ matrix.release }}
+        run: |
+          if [ "$RELEASE_MODE" = latest ]; then
+            python3 container/resolve-latest.py --output "$RUNNER_TEMP/codex-lock.json"
+          else
+            cp container/versions.json "$RUNNER_TEMP/codex-lock.json"
+          fi
+      - name: Install isolated official full package
+        run: >-
+          python3 container/install-codex.py --lock "$RUNNER_TEMP/codex-lock.json"
+          --arch amd64 --prefix "$RUNNER_TEMP/codex-package"
+      - name: Probe unauthenticated CLI and app-server schema
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-profile
+        run: |
+          mkdir -m 700 "$CODEX_HOME"
+          cp config/codex-service.toml "$CODEX_HOME/config.toml"
+          "$RUNNER_TEMP/codex-package/bin/codex" --version > "$RUNNER_TEMP/version.txt"
+          "$RUNNER_TEMP/codex-package/bin/codex" login --help > "$RUNNER_TEMP/login-help.txt"
+          "$RUNNER_TEMP/codex-package/bin/codex" app-server --help > "$RUNNER_TEMP/app-server-help.txt"
+          "$RUNNER_TEMP/codex-package/bin/codex" app-server generate-json-schema --experimental --out "$RUNNER_TEMP/protocol"
+          test -s "$RUNNER_TEMP/version.txt"
+      - name: Require reviewed version and adapter protocol surface
+        run: >-
+          python3 container/check-protocol.py --schema-dir "$RUNNER_TEMP/protocol"
+          --version-file "$RUNNER_TEMP/version.txt" > "$RUNNER_TEMP/protocol-check.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: codex-${{ matrix.release }}-protocol-only
+          path: |
+            ${{ runner.temp }}/codex-lock.json
+            ${{ runner.temp }}/version.txt
+            ${{ runner.temp }}/login-help.txt
+            ${{ runner.temp }}/app-server-help.txt
+            ${{ runner.temp }}/protocol-check.json
+            ${{ runner.temp }}/protocol
+          retention-days: 14
+          if-no-files-found: error

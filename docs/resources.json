@@ -1,0 +1,77 @@
+{
+  "schema_version": "aicatlog.resources.v1",
+  "resources": [
+    {
+      "id": "entry",
+      "kind": "context",
+      "path": "../llms.txt",
+      "when": "Use the selected task-checkpoint-record entry contract"
+    },
+    {
+      "id": "contract",
+      "kind": "context",
+      "path": "../AGENTS.md",
+      "when": "Use the selected task-checkpoint-record contract contract"
+    },
+    {
+      "id": "specification",
+      "kind": "context",
+      "path": "../SPEC.md",
+      "when": "Use the selected task-checkpoint-record specification contract"
+    },
+    {
+      "id": "skill",
+      "kind": "skill",
+      "path": "../skills/task-checkpoint-record/SKILL.md",
+      "when": "Use the selected task-checkpoint-record skill contract"
+    },
+    {
+      "id": "distribution",
+      "kind": "context",
+      "path": "distribution.md",
+      "when": "Use the selected task-checkpoint-record distribution contract"
+    },
+    {
+      "id": "architecture",
+      "kind": "context",
+      "path": "architecture.md",
+      "when": "Use the selected task-checkpoint-record architecture contract"
+    },
+    {
+      "id": "installation",
+      "kind": "context",
+      "path": "installation.md",
+      "when": "Use the selected task-checkpoint-record installation contract"
+    },
+    {
+      "id": "runtime",
+      "kind": "context",
+      "path": "app-server-runtime.md",
+      "when": "Use the selected task-checkpoint-record runtime contract"
+    },
+    {
+      "id": "authentication",
+      "kind": "context",
+      "path": "authentication.md",
+      "when": "Use the selected task-checkpoint-record authentication contract"
+    },
+    {
+      "id": "helper-protocol",
+      "kind": "context",
+      "path": "helper-protocol.md",
+      "when": "Use the selected task-checkpoint-record helper-protocol contract"
+    },
+    {
+      "id": "configuration",
+      "kind": "context",
+      "path": "configuration.md",
+      "when": "Use the selected task-checkpoint-record configuration contract"
+    },
+    {
+      "id": "engineering-lessons",
+      "kind": "context",
+      "path": "engineering-lessons.md",
+      "when": "Use the selected task-checkpoint-record engineering-lessons contract"
+    }
+  ]
+}

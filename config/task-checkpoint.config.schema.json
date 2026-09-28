@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lwyBZss8924d/task-checkpoint-record/config/task-checkpoint.config.schema.json",
+  "title": "Unified task checkpoint configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "task-checkpoint.config.v1"
+    },
+    "recorder": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state_dir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Literal absolute or config-directory-relative path; no tilde, dollar expansion or parent components."
+        },
+        "helper_command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "max_jobs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000
+        },
+        "lease_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 120000
+        },
+        "page_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 4194304
+        },
+        "page_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "stdout_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 8388608
+        }
+      }
+    },
+    "codex": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "executable": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "Literal absolute or config-directory-relative path; no tilde, dollar expansion or parent components."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "home": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "Literal absolute or config-directory-relative path; no tilde, dollar expansion or parent components."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supervisor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "enum": [
+                "gpt-6-sol",
+                "gpt-6-luna"
+              ]
+            },
+            "effort": {
+              "enum": [
+                "medium",
+                "high"
+              ]
+            }
+          }
+        },
+        "semantic_worker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "enum": [
+                "gpt-6-sol",
+                "gpt-6-luna"
+              ]
+            },
+            "effort": {
+              "enum": [
+                "medium",
+                "high"
+              ]
+            }
+          }
+        },
+        "eval": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "enum": [
+                "gpt-6-sol",
+                "gpt-6-luna"
+              ]
+            },
+            "effort": {
+              "enum": [
+                "medium",
+                "high"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "openrouter",
+            "typesafe"
+          ]
+        },
+        "model": {
+          "enum": [
+            "typesafe/jev-1.13-20260917",
+            "jev-1.13.0"
+          ]
+        },
+        "api_key_env": {
+          "type": "string",
+          "pattern": "^[A-Z_][A-Z0-9_]{0,127}$"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "deadline_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20000
+            },
+            "max_request_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            },
+            "max_response_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1048576
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "typesafe"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "const": "jev-1.13.0"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "model": {
+                "const": "typesafe/jev-1.13-20260917"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "description": "Runtime also enforces literal-path rules and lease_ms > timeout_ms + 500. Unknown keys are errors; no endpoints or inline credentials."
+}

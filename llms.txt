@@ -1,0 +1,16 @@
+# Task Checkpoint Record
+
+> Select the task's private state and exact binding before acting. Use bounded JSON interfaces; pointers retain their source authority.
+
+- [Agent contract](AGENTS.md): repository ownership, validation and public/private boundaries.
+- [Specification](SPEC.md): current deliverables and acceptance limits.
+- [Record and recall Skill](skills/task-checkpoint-record/SKILL.md): bind a selected task, inspect windows, filter and resolve source-qualified metadata.
+- [Architecture](docs/architecture.md): callback admission, jobs, coverage and model separation.
+- [Helper protocol](docs/helper-protocol.md): explicit bounded process input/output.
+- [Installation](docs/installation.md): exact plan/apply/verify/rollback for local CLI and Hook definitions.
+- [Unified configuration](docs/configuration.md): one explicit local file for recorder settings, dedicated Codex auth/models, and the selected Jev provider's credential reference.
+- [Dedicated authentication](docs/authentication.md): persistent standard device-auth in an isolated Codex home.
+- [Model runtime](docs/app-server-runtime.md): explicit prepared-input calls, native identities and lifecycle limits.
+- [Distribution](docs/distribution.md): public packages, plugins, CI, containers and version compatibility.
+- [Implementation plan](docs/implementation-plan.md): phased delivery and later lifecycle work.
+- [Engineering lessons](docs/engineering-lessons.md): concrete failure mechanisms and the focused checks that prevent recurrence.

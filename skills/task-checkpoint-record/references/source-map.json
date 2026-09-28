@@ -1,0 +1,93 @@
+{
+  "external_source_links": [],
+  "files": [
+    {
+      "destination": "references/config/codex-service.toml",
+      "projected_sha256": "e0c601e406ba3dc8b1a637538ed969169003c3d4425f94c6e42a378315b27fc0",
+      "source": "config/codex-service.toml",
+      "source_sha256": "e0c601e406ba3dc8b1a637538ed969169003c3d4425f94c6e42a378315b27fc0"
+    },
+    {
+      "destination": "references/config/task-checkpoint.config.schema.json",
+      "projected_sha256": "c200a341da70c869c09a8ad369f2e4cbe5ff1f5093c6348af969c5c7693dd4cd",
+      "source": "config/task-checkpoint.config.schema.json",
+      "source_sha256": "c200a341da70c869c09a8ad369f2e4cbe5ff1f5093c6348af969c5c7693dd4cd"
+    },
+    {
+      "destination": "references/config/task-checkpoint.container.example.json",
+      "projected_sha256": "cdf6d245d9277be03a17b97bc159f743c76a447612a089181463fcf66d0332c7",
+      "source": "config/task-checkpoint.container.example.json",
+      "source_sha256": "cdf6d245d9277be03a17b97bc159f743c76a447612a089181463fcf66d0332c7"
+    },
+    {
+      "destination": "references/config/task-checkpoint.example.json",
+      "projected_sha256": "d5d97eebea3fccc1645072c5edb64d41c0e7ded3d7de1c7b59e7cb00388de12d",
+      "source": "config/task-checkpoint.example.json",
+      "source_sha256": "d5d97eebea3fccc1645072c5edb64d41c0e7ded3d7de1c7b59e7cb00388de12d"
+    },
+    {
+      "destination": "references/config/task-checkpoint.typesafe.example.json",
+      "projected_sha256": "acf8f36fd420551e7aa57a9913be0d2a6d44f559ea99d8441df89ed1755cbb3c",
+      "source": "config/task-checkpoint.typesafe.example.json",
+      "source_sha256": "acf8f36fd420551e7aa57a9913be0d2a6d44f559ea99d8441df89ed1755cbb3c"
+    },
+    {
+      "destination": "references/docs/app-server-runtime.md",
+      "projected_sha256": "f8a2db60cd37c9359bf09d9ce3a950ed886a816a78a87ae3e66dcd583926bed1",
+      "source": "docs/app-server-runtime.md",
+      "source_sha256": "3ac7a8c0bde298923a2778071548e828c5318e3d65f68604b8d337d94067b628"
+    },
+    {
+      "destination": "references/docs/architecture.md",
+      "projected_sha256": "72b1db0492b6adeb8debc26ae6f28a7a14ad5d622cc3abc7c8034d0569428939",
+      "source": "docs/architecture.md",
+      "source_sha256": "944e848a6544915ef2c325a8457fc2389a69b1fbba784df18e361de1d67077ed"
+    },
+    {
+      "destination": "references/docs/authentication.md",
+      "projected_sha256": "e6d2c063945135bea473d91efeb04b30a69b1ceaf1e83597cbbe460cb0ec726d",
+      "source": "docs/authentication.md",
+      "source_sha256": "fcd56823cebc79172e9fc66ba018a2ddcd7c6e8a96ac13d6e9276c7602f5218e"
+    },
+    {
+      "destination": "references/docs/configuration.md",
+      "projected_sha256": "24bff721e9dac7b141361c083dede8bf0ae1fc429d747a8fd38d2b8d0d413b98",
+      "source": "docs/configuration.md",
+      "source_sha256": "85855f3a2b4a9fe0f8c14879b4c5c9422569cab3036970a0d7faf6672e8b6f87"
+    },
+    {
+      "destination": "references/docs/distribution.md",
+      "projected_sha256": "962a5a57be89f96219463378c8f9e453dda33146ca525a9ee25ff5b8a3125eff",
+      "source": "docs/distribution.md",
+      "source_sha256": "f969a4fb925fa89ba2493da3b090e1f97204a6f3b643393c84c68f808878209e"
+    },
+    {
+      "destination": "references/docs/engineering-lessons.md",
+      "projected_sha256": "13eb6e58a67df811b2f84467040fc047cab49c32ca9ea9193e74c45e7b146050",
+      "source": "docs/engineering-lessons.md",
+      "source_sha256": "684cea99837b7a09c0acf28038d85033865e4120ee479719029a9540e74c9b13"
+    },
+    {
+      "destination": "references/docs/helper-protocol.md",
+      "projected_sha256": "f37b67c783d44527069943294ad18c40af38e14851fe77d3c96196fd85dfedcc",
+      "source": "docs/helper-protocol.md",
+      "source_sha256": "30ea90c9f38c4e765334f85b80c4ad32dc63800ad564e44c49d3f925d0e03d6e"
+    },
+    {
+      "destination": "references/docs/implementation-plan.md",
+      "projected_sha256": "632a4519819128b23f714512e03ed53268580d2abbe3e070d2c5636d53e681c0",
+      "source": "docs/implementation-plan.md",
+      "source_sha256": "3b741c1b550bfc998181d36344e686a9d515ab3bd3a36ac3f6474cb79c59ddb3"
+    },
+    {
+      "destination": "references/docs/installation.md",
+      "projected_sha256": "06cd32467371e9a352984e549d087198fc0b775649674411e57d4211840845dd",
+      "source": "docs/installation.md",
+      "source_sha256": "c443b1beafcc33e2cf9c92ad760cad32ba4fc172ab398929757cb5ea37045221"
+    }
+  ],
+  "generator": "scripts/distribution/skill-docs.py",
+  "generator_sha256": "f14993b1e77d131440eb17a34e63aacd5cbb1e4441c9f5fcb8d0907fcbdce763",
+  "schema_version": "skill-docs-projection.v1",
+  "skill": "task-checkpoint-record"
+}
