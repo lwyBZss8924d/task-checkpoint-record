@@ -1,7 +1,8 @@
 # Pi package and lifecycle extension
 
 The Pi adapter is distributed as a separate self-contained npm-layout archive
-derived from the same verified recorder/helper bundle. It includes one native
+derived from the same verified recorder/helper bundle, starting with recorder
+v0.3.0. It includes one native
 default extension factory, a bounded subprocess bridge, a workflow Skill, both
 component source trees, a built Node helper CLI and both MIT licenses. The host
 supplies its Pi SDK through the declared peer; no second Pi SDK is bundled.
@@ -29,7 +30,7 @@ is loaded from its selected path, so retain that accepted package directory.
 `pi remove /absolute/extracted/package` removes its declaration; it does not delete
 external recorder state, task sources or the dedicated Codex account directory.
 
-`pi install npm:task-checkpoint-record-pi@0.2.0` is only applicable after an
+`pi install npm:task-checkpoint-record-pi@0.3.0` is only applicable after an
 authorized npm publication has been verified. This release builder does not
 publish to npm or configure a trusted publisher. A package namespace and publisher
 identity must be established separately. A `pi-package` keyword creates discovery

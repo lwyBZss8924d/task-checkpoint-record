@@ -1,6 +1,6 @@
 {
   "name": "task-checkpoint-record-pi",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Explicit Pi lifecycle recording and local source-qualified checkpoint recall",
   "type": "module",
   "license": "MIT",

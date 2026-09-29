@@ -14,11 +14,12 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('pi_package', Path(__file__).with_name('pi-package.py'))
 pi = importlib.util.module_from_spec(spec); spec.loader.exec_module(pi)
 REPO = Path(__file__).resolve().parents[2]
+VERSION = json.loads((REPO/'package.json').read_bytes())['version']
 
 
 def fixture(root):
     payload = {}
-    for key, name, version, prefix, commit in [('recorder','task-checkpoint-record','0.2.0','','a'*40),
+    for key, name, version, prefix, commit in [('recorder','task-checkpoint-record',VERSION,'','a'*40),
                                               ('helper','ultrafast-atif-helper','0.3.0','vendor/ultrafast-atif-helper/','b'*40)]:
         files = {'package.json': json.dumps({'name':name,'version':version}).encode(), 'LICENSE':b'MIT License\nPermission is hereby granted'}
         if key == 'recorder':
@@ -44,7 +45,7 @@ class PiPackageTests(unittest.TestCase):
         return {p.relative_to(REPO).as_posix():(p.read_bytes(),0o644) for p in (REPO/pi.PREFIX).rglob('*') if p.is_file()}
 
     def test_manifest_is_explicit_and_host_sdk_is_not_bundled(self):
-        files=pi.overlay(self.payload(),'0.2.0');package=json.loads(files['package.json'][0])
+        files=pi.overlay(self.payload(),VERSION);package=json.loads(files['package.json'][0])
         self.assertEqual(package['pi']['extensions'],['./extensions/index.ts'])
         self.assertNotIn('scripts',package);self.assertNotIn('dependencies',package)
 
@@ -56,9 +57,9 @@ class PiPackageTests(unittest.TestCase):
                 elif change=='dependency':package['dependencies']={'@earendil-works/pi-coding-agent':'0.87.1'}
                 elif change=='resource':package['pi']['extensions']=['./runtime/recorder/src/cli.ts']
                 elif change=='hidden':files[pi.PREFIX+'.npmrc']=(b'SYNTHETIC_CONFIG_NOT_A_CREDENTIAL',0o644)
-                else:package['version']='0.3.0'
+                else:package['version']='999.0.0'
                 files[path]=(pi.encode(package),0o644)
-                with self.assertRaises(ValueError):pi.overlay(files,'0.2.0')
+                with self.assertRaises(ValueError):pi.overlay(files,VERSION)
 
     def test_npm_layout_inventory_binds_both_components_and_compiled_helper(self):
         bun=shutil.which('bun');self.assertIsNotNone(bun)

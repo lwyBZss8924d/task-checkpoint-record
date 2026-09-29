@@ -13,7 +13,7 @@ Download the versioned Pi archive from the recorder release, verify its publishe
 checksums and inventory, extract it, then run `pi install /absolute/extracted/package`.
 Use `--local` for an isolated project installation. `pi list` and `pi remove`
 manage that declaration; package removal does not remove external recorder state.
-`pi install npm:task-checkpoint-record-pi@0.2.0` is valid only after an authorized
+`pi install npm:task-checkpoint-record-pi@0.3.0` is valid only after an authorized
 npm publication is independently confirmed. Do not use a recorder-main Git
 subdirectory URL: that is not an assembled Pi package installation.
 

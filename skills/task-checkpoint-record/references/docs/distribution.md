@@ -75,7 +75,7 @@ marketplace ZIP into a durable versioned package directory. Use that extracted
 directory as the marketplace root, then select the current Codex profile explicitly:
 
 ```sh
-codex plugin marketplace add /absolute/task-checkpoint-tools-0.2.0-marketplace --json
+codex plugin marketplace add /absolute/task-checkpoint-tools-0.3.0-marketplace --json
 codex plugin add task-checkpoint-tools@task-checkpoint-tools --json
 codex plugin list --json
 ```
