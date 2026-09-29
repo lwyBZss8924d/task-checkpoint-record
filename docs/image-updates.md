@@ -29,9 +29,16 @@ initialize/shutdown exchange. They start no model thread or turn. Codex's
 Each platform publication job builds the actual universal image from those
 frozen inputs, loads it locally, and checks it with network disabled and a
 read-only root filesystem. A private tmpfs holds only a synthetic empty store.
+Source checks compare both the index and worktree against each pinned commit;
+the build then consumes separate bounded Git-blob exports. Context-eligible
+untracked files and the workflow's nested helper checkout are excluded from the
+recorder export. The helper has its own pinned export and narrow build context.
 Checks cover both contained CLIs, configuration, activation schema, the qualified
-native version and refusal to start an agent without an admission. The same image
-ID is then pushed. There is no second untested build between smoke and push.
+native version and refusal to start an agent without an admission. Smoke resolves
+the selected local image once and executes that immutable ID with `--pull=never`.
+Publication validates the smoke ID, tags that ID for its unique destination and
+checks the destination binding before push. There is no second untested build
+between smoke and push.
 
 Only publication jobs receive `packages: write`. Registry login occurs after
 the local image passes. The final publication job requires matching successful

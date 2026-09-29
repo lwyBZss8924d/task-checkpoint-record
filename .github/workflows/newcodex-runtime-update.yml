@@ -155,18 +155,16 @@ jobs:
         run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
       - name: Push tested image and record immutable digest
         if: github.event_name == 'schedule' || inputs.publish
-        run: |
-          docker tag task-checkpoint-record:checked "$IMAGE_REPOSITORY:$IMAGE_TAG-$IMAGE_ARCH"
-          docker push "$IMAGE_REPOSITORY:$IMAGE_TAG-$IMAGE_ARCH"
-          python3 -I -B container/image-ci.py published --plan "$RUNNER_TEMP/image-inputs/image-plan.json" \
-            --smoke "$RUNNER_TEMP/image-smoke.json" --arch "$IMAGE_ARCH" \
-            --image "$IMAGE_REPOSITORY:$IMAGE_TAG-$IMAGE_ARCH" --output "$RUNNER_TEMP/image-publication.json"
+        run: >-
+          python3 -I -B container/image-ci.py push-checked --plan "$RUNNER_TEMP/image-inputs/image-plan.json"
+          --smoke "$RUNNER_TEMP/image-smoke.json" --arch "$IMAGE_ARCH" --output "$RUNNER_TEMP/image-publication.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: image-platform-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/image-build.json
+            ${{ runner.temp }}/image-build/source-contexts.json
             ${{ runner.temp }}/image-smoke.json
             ${{ runner.temp }}/image-publication.json
           retention-days: 90

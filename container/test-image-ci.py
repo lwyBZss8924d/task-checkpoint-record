@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline image-release boundary tests; Docker/native/network are never launched."""
 import copy
+from contextlib import contextmanager
 import importlib.util
 import json
 import os
@@ -25,6 +26,25 @@ def fixture():
     options = {'recorder_commit': 'd' * 40, 'recorder_version': '0.2.0', 'repository': 'example/task-checkpoint-record',
                'protocol_sha': 'e' * 64, 'native_lock_sha': 'f' * 64, 'run_id': '123', 'run_attempt': '1'}
     return native, base, helper, options
+
+
+@contextmanager
+def private_git_checkout():
+    """Existing public commit, private index/objects/worktree, no new commits."""
+    expected = subprocess.check_output(['git', '-C', str(image.REPO), 'rev-parse', 'HEAD'], text=True).strip()
+    objects = Path(subprocess.check_output(['git', '-C', str(image.REPO), 'rev-parse', '--git-path', 'objects'], text=True).strip())
+    if not objects.is_absolute(): objects = image.REPO / objects
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td); control = root / 'control.git'; checkout = root / 'checkout'; checkout.mkdir()
+        subprocess.run(['git', 'init', '--bare', '--template=', str(control)], capture_output=True, check=True)
+        (control / 'objects/info/alternates').write_text(str(objects.resolve()) + '\n')
+        (control / 'HEAD').write_text(expected + '\n')
+        environment = {'GIT_DIR': str(control), 'GIT_WORK_TREE': str(checkout),
+                       'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
+        with patch.dict(os.environ, environment):
+            image.command(['git', '-C', checkout, 'read-tree', expected])
+            image.command(['git', '-C', checkout, 'checkout-index', '--all'])
+            yield root, checkout, expected
 
 
 class ImagePolicyTests(unittest.TestCase):
@@ -97,6 +117,92 @@ class ImagePolicyTests(unittest.TestCase):
                 image.published(root/'plan.json',root/'smoke.json','amd64','synthetic:tag',root/'publish.json')
             self.assertFalse((root/'publish.json').exists())
 
+    def test_smoke_runs_inspected_id_when_the_input_tag_moves(self):
+        # R1 reviewer control: inspect A, move tag to B, then resolve run argument.
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); plan=self.plan(); image.write(root/'plan.json',plan); plan_sha=image.digest((root/'plan.json').read_bytes())
+            a='sha256:'+'1'*64; b='sha256:'+'2'*64; tag='synthetic:checked'; ran=[]; state={'tag':a}
+            info={'Id':a,'Os':'linux','Architecture':'amd64','Size':42,
+                  'Config':{'Labels':image.image_labels(plan,'amd64',plan_sha)},
+                  'RepoDigests':[plan['image_repository']+'@sha256:'+'3'*64]}
+            def inspect(_):
+                state['tag']=b
+                return copy.deepcopy(info)
+            def fake(argv,**kwargs):
+                if argv[:2]==['docker','run']:
+                    selected=argv[argv.index('/usr/bin/env')+1]
+                    ran.append(state['tag'] if selected==tag else selected)
+                    self.assertIn('--pull=never',argv)
+                    return subprocess.CompletedProcess(argv,0,b'{"status":"pass","checks":[],"model_calls":0}',b'')
+                if argv[:2]==['docker','inspect']: return subprocess.CompletedProcess(argv,1,b'',b'')
+                self.fail('unexpected command')
+            with patch.object(image,'image_inspect',side_effect=inspect),patch.object(image,'command',side_effect=fake):
+                image.smoke_image(root/'plan.json','amd64',tag,root/'smoke.json')
+            with patch.object(image,'image_inspect',return_value=info):
+                image.published(root/'plan.json',root/'smoke.json','amd64',tag,root/'publication.json')
+            self.assertEqual(ran,[a]); self.assertEqual(image.read(root/'publication.json')['image_id'],a)
+
+    def test_push_tags_the_checked_id_and_rejects_pre_push_tag_substitution(self):
+        for substitute in (False,True):
+            with self.subTest(substitute=substitute),tempfile.TemporaryDirectory() as td:
+                root=Path(td); plan=self.plan(); image.write(root/'plan.json',plan); plan_sha=image.digest((root/'plan.json').read_bytes())
+                a='sha256:'+'1'*64; b='sha256:'+'2'*64; calls=[]; tags={}
+                image.write(root/'smoke.json',{'status':'pass','plan_sha256':plan_sha,'platform':'linux/amd64','image_id':a})
+                def inspect(ref):
+                    selected=ref if ref.startswith('sha256:') else tags[ref]
+                    return {'Id':selected,'Os':'linux','Architecture':'amd64','Size':42,
+                            'Config':{'Labels':image.image_labels(plan,'amd64',plan_sha)},
+                            'RepoDigests':[plan['image_repository']+'@sha256:'+'3'*64]}
+                def fake(argv,**kwargs):
+                    calls.append(argv)
+                    if argv[:2]==['docker','tag']:
+                        self.assertEqual(argv[2],a);tags[argv[3]]=b if substitute else a
+                    elif argv[:2]==['docker','push']: self.assertEqual(tags[argv[2]],a)
+                    else:self.fail('unexpected command')
+                    return subprocess.CompletedProcess(argv,0,b'',b'')
+                with patch.object(image,'image_inspect',side_effect=inspect),patch.object(image,'command',side_effect=fake):
+                    if substitute:
+                        with self.assertRaisesRegex(ValueError,'changed_before_push'):
+                            image.push_checked(root/'plan.json',root/'smoke.json','amd64',root/'publication.json')
+                        self.assertFalse(any(call[:2]==['docker','push'] for call in calls))
+                    else:
+                        image.push_checked(root/'plan.json',root/'smoke.json','amd64',root/'publication.json')
+                        self.assertEqual(image.read(root/'publication.json')['image_id'],a)
+
+    def test_staged_and_unstaged_changes_are_compared_to_pinned_commit(self):
+        with private_git_checkout() as (root, checkout, expected):
+            dockerfile=checkout/'Dockerfile'; original=dockerfile.read_bytes()
+            image.require_committed_checkout(checkout,expected)
+            dockerfile.write_bytes(original+b'\n# synthetic staged change\n')
+            image.command(['git','-C',checkout,'add','Dockerfile'])
+            # This is exactly the inadequate R1 guard: staged==worktree reports clean.
+            self.assertEqual(image.command(['git','-C',checkout,'diff','--exit-code'],check=False).returncode,0)
+            with self.assertRaisesRegex(ValueError,'tracked_source_modified'):
+                image.require_committed_checkout(checkout,expected)
+            # Reversing only the worktree does not excuse the dirty index.
+            dockerfile.write_bytes(original)
+            self.assertEqual(image.command(['git','-C',checkout,'diff','--exit-code',expected,'--'],check=False).returncode,0)
+            with self.assertRaisesRegex(ValueError,'tracked_source_modified'):
+                image.require_committed_checkout(checkout,expected)
+            image.command(['git','-C',checkout,'read-tree',expected])
+            dockerfile.write_bytes(original+b'\n# synthetic unstaged change\n')
+            with self.assertRaisesRegex(ValueError,'tracked_source_modified'):
+                image.require_committed_checkout(checkout,expected)
+
+    def test_context_uses_git_blobs_and_excludes_untracked_and_nested_helper(self):
+        with private_git_checkout() as (root, checkout, expected):
+            (checkout/'src/untracked-image-probe.ts').write_text('// synthetic untracked context input\n')
+            nested=checkout/'_bundle-helper-source'; nested.mkdir(); (nested/'Dockerfile').write_text('FROM scratch\n')
+            exported=root/'export'; result=image.export_committed_context(checkout,expected,exported)
+            self.assertFalse((exported/'src/untracked-image-probe.ts').exists())
+            self.assertFalse((exported/'_bundle-helper-source').exists())
+            committed=image.command(['git','-C',checkout,'show',expected+':Dockerfile']).stdout
+            self.assertEqual((exported/'Dockerfile').read_bytes(),committed)
+            # Subsequent changes in the mutable checkout do not enter the snapshot.
+            (checkout/'Dockerfile').write_text('FROM scratch\n')
+            self.assertEqual((exported/'Dockerfile').read_bytes(),committed)
+            self.assertEqual(result['untracked_inputs'],'excluded_by_committed_export')
+
     def test_failed_container_smoke_retains_failure_and_scoped_cleanup(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);plan=self.plan();image.write(root/'plan.json',plan);plan_sha=image.digest((root/'plan.json').read_bytes())
@@ -122,6 +228,8 @@ class ImagePolicyTests(unittest.TestCase):
         self.assertIn('needs: [resolve, publish-platform]',workflow)
         self.assertIn("cron: '23 */6 * * *'",workflow)
         self.assertNotIn('secrets.OPENROUTER',workflow)
+        self.assertIn('image-ci.py push-checked',workflow)
+        self.assertNotIn('docker tag task-checkpoint-record:checked',workflow)
 
     def test_published_current_and_immutable_index_must_resolve_identically(self):
         with tempfile.TemporaryDirectory() as td:

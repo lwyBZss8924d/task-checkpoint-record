@@ -7,7 +7,7 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import platform
 import re
 import shutil
@@ -19,6 +19,11 @@ import uuid
 BASE = 'ghcr.io/openai/codex-universal'
 HELPER = 'https://github.com/lwyBZss8924d/ultrafast-atif-helper'
 REPO = Path(__file__).resolve().parents[1]
+# Only committed public build inputs are exported. Untracked paths, including the
+# workflow's nested helper checkout, can never enter either Docker context.
+BUILD_INPUTS = ('Dockerfile', '.dockerignore', 'package.json', 'package-lock.json',
+                'tsconfig.json', 'LICENSE', 'src', 'bin', 'config', 'container',
+                'scripts/runtime', 'scripts/distribution/package.py')
 
 
 def require(ok, code):
@@ -132,6 +137,47 @@ def image_inspect(image):
     return json.loads(command(['docker', 'image', 'inspect', image]).stdout)[0]
 
 
+def require_committed_checkout(root, expected):
+    require(hex_value(expected, 40), 'source_commit_required')
+    require(command(['git', '-C', root, 'rev-parse', 'HEAD']).stdout.decode().strip() == expected, 'checkout_commit_changed')
+    # A staged change may match the worktree; an unstaged reversal may match HEAD.
+    # Both comparisons are necessary before exporting the committed build inputs.
+    for extra in (['--cached'], []):
+        require(command(['git', '-C', root, 'diff', *extra, '--exit-code', expected, '--'], check=False).returncode == 0,
+                'tracked_source_modified')
+
+
+def export_committed_context(root, expected, output):
+    require_committed_checkout(root, expected)
+    rows = command(['git', '-C', root, 'ls-tree', '-rz', '--full-tree', expected]).stdout.split(b'\0')
+    files = []; total = 0
+    output.mkdir(parents=True, exist_ok=False)
+    for row in rows:
+        if not row:
+            continue
+        metadata, raw_path = row.split(b'\t', 1)
+        mode, kind, object_id = metadata.decode('ascii').split(); relative = raw_path.decode('utf-8')
+        if not any(relative == path or relative.startswith(path + '/') for path in BUILD_INPUTS):
+            continue
+        path = PurePosixPath(relative)
+        require(not path.is_absolute() and '..' not in path.parts and '\\' not in relative
+                and str(path) == relative and '\n' not in relative, 'unsafe_committed_context_path')
+        require(kind == 'blob' and mode in ('100644', '100755') and hex_value(object_id, 40), 'non_regular_committed_context')
+        require(not any(part in {'.git', '.env', 'auth.json', 'workspace', '.local', 'node_modules', '__pycache__'}
+                        or part.startswith('.env.') for part in path.parts), 'private_committed_context_path')
+        size = int(command(['git', '-C', root, 'cat-file', '-s', object_id]).stdout)
+        total += size
+        require(size <= 4 * 1024 * 1024 and total <= 32 * 1024 * 1024 and len(files) < 2048, 'committed_context_budget')
+        data = command(['git', '-C', root, 'cat-file', 'blob', object_id]).stdout
+        require(len(data) == size, 'committed_context_blob_changed')
+        destination = output / relative; destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open('xb') as stream:
+            stream.write(data)
+        permission = int(mode, 8) & 0o777; destination.chmod(permission)
+        files.append({'path': relative, 'sha256': digest(data), 'size': size, 'mode': permission})
+    return {'commit': expected, 'files': files, 'untracked_inputs': 'excluded_by_committed_export'}
+
+
 def build_image(plan_path, source, helper_source, work, arch, tag, output):
     plan, raw = verify_plan(plan_path); source = source.resolve(); helper_source = helper_source.resolve()
     require(arch in ('amd64', 'arm64'), 'image_architecture')
@@ -140,36 +186,46 @@ def build_image(plan_path, source, helper_source, work, arch, tag, output):
     daemon_machine = command(['docker', 'info', '--format', '{{.Architecture}}']).stdout.decode().strip().lower()
     daemon_arch = {'x86_64': 'amd64', 'amd64': 'amd64', 'aarch64': 'arm64', 'arm64': 'arm64'}.get(daemon_machine)
     require(daemon_arch == arch, 'native_docker_architecture_mismatch')
-    for root, expected in [(source, plan['recorder']['commit']), (helper_source, plan['helper']['commit'])]:
-        require(command(['git', '-C', root, 'rev-parse', 'HEAD']).stdout.decode().strip() == expected, 'checkout_commit_changed')
-        require(command(['git', '-C', root, 'diff', '--exit-code'], check=False).returncode == 0, 'tracked_source_modified')
-    require(read(helper_source / 'package.json')['version'] == plan['helper']['version'], 'helper_package_version_changed')
-    require(digest((source / 'container/app-server-surface.json').read_bytes()) == plan['protocol_contract_sha256'], 'protocol_contract_changed')
-    require(digest((plan_path.parent / 'versions.json').read_bytes()) == plan['native_lock_sha256'], 'native_lock_changed')
     work.mkdir(parents=True, exist_ok=False)
+    recorder_export = work / 'recorder-source'; helper_export = work / 'helper-source'
+    contexts = {'recorder': export_committed_context(source, plan['recorder']['commit'], recorder_export),
+                'helper': export_committed_context(helper_source, plan['helper']['commit'], helper_export)}
+    for name, root in [('recorder', recorder_export), ('helper', helper_export)]:
+        package = read(root / 'package.json')
+        expected_name = 'task-checkpoint-record' if name == 'recorder' else 'ultrafast-atif-helper'
+        require(package['name'] == expected_name and package['version'] == plan[name]['version'], name + '_package_identity_changed')
+    require(read(recorder_export / 'container/helper-source.json') == plan['helper'], 'helper_source_lock_changed')
+    require(digest((recorder_export / 'container/app-server-surface.json').read_bytes()) == plan['protocol_contract_sha256'], 'protocol_contract_changed')
+    native_lock = (plan_path.parent / 'versions.json').read_bytes()
+    require(digest(native_lock) == plan['native_lock_sha256'], 'native_lock_changed')
+    lock_context = work / 'codex-lock'; lock_context.mkdir()
+    (lock_context / 'versions.json').write_bytes(native_lock); (lock_context / 'image-plan.json').write_bytes(raw)
+    write(work / 'source-contexts.json', contexts)
     disk = shutil.disk_usage(work)
     print(json.dumps({'disk_bytes': {'free': disk.free, 'total': disk.total}, 'required_base': plan['base']['reference'],
                       'capacity_guarantee': False, 'cleanup_performed': False}), flush=True)
-    command([sys.executable, '-I', '-B', source / 'scripts/distribution/package.py', 'helper-context',
-             '--source', helper_source, '--output', work / 'helper-context'])
+    command([sys.executable, '-I', '-B', recorder_export / 'scripts/distribution/package.py', 'helper-context',
+             '--source', helper_export, '--output', work / 'helper-context'])
     argv = ['docker', 'buildx', 'build', '--load', '--platform', 'linux/' + arch,
             '--build-context', 'helper=' + str(work / 'helper-context'),
-            '--build-context', 'codex-lock=' + str(plan_path.parent),
+            '--build-context', 'codex-lock=' + str(lock_context),
             '--build-arg', 'CODEX_BASE=' + plan['base']['reference'], '--tag', tag]
     for key, value in image_labels(plan, arch, digest(raw)).items():
         argv.extend(['--label', key + '=' + value])
-    argv.append(str(source))
+    argv.append(str(recorder_export))
     # Stream build diagnostics. No credentials are provided by this command.
     result = subprocess.run(argv, env=clean_environment(), timeout=10800)
     if result.returncode:
         write(output, {'schema_version': 'task-checkpoint.image-build.v1', 'status': 'failed',
                        'plan_sha256': digest(raw), 'argv': argv, 'exit_code': result.returncode,
-                       'free_bytes_before': disk.free, 'platform': 'linux/' + arch})
+                       'free_bytes_before': disk.free, 'platform': 'linux/' + arch,
+                       'source_contexts_sha256': digest(encoded(contexts))})
         raise ValueError('image_build_failed')
     image = image_inspect(tag)
     write(output, {'schema_version': 'task-checkpoint.image-build.v1', 'status': 'pass', 'plan_sha256': digest(raw),
                    'image_id': image['Id'], 'platform': image['Os'] + '/' + image['Architecture'],
-                   'argv': argv, 'free_bytes_before': disk.free, 'size_bytes': image['Size']})
+                   'argv': argv, 'free_bytes_before': disk.free, 'size_bytes': image['Size'],
+                   'source_contexts_sha256': digest(encoded(contexts))})
 
 
 def runtime_module():
@@ -223,12 +279,13 @@ def in_container_smoke():
 
 def smoke_image(plan_path, arch, image, output):
     plan, raw = verify_plan(plan_path); info = image_inspect(image)
+    require(re.fullmatch(r'sha256:[a-f0-9]{64}', info['Id']) is not None, 'immutable_image_id_required')
     require(info['Os'] + '/' + info['Architecture'] == 'linux/' + arch, 'image_platform_mismatch')
     require(all(info['Config']['Labels'].get(k) == v for k, v in image_labels(plan, arch, digest(raw)).items()), 'image_label_mismatch')
     name = 'tcr-smoke-' + uuid.uuid4().hex
-    argv = ['docker', 'run', '--rm', '--name', name, '--label', 'io.task-checkpoint.smoke=' + name,
+    argv = ['docker', 'run', '--rm', '--pull=never', '--name', name, '--label', 'io.task-checkpoint.smoke=' + name,
             '--network', 'none', '--read-only', '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m',
-            '--entrypoint', '/usr/bin/env', image, '-u', 'BUN_OPTIONS', '-u', 'NODE_OPTIONS',
+            '--entrypoint', '/usr/bin/env', info['Id'], '-u', 'BUN_OPTIONS', '-u', 'NODE_OPTIONS',
             'python3', '-I', '-B', '/opt/task-checkpoint-record/container/image-ci.py', 'inside-smoke']
     try:
         result = command(argv, timeout=240, check=False)
@@ -263,6 +320,23 @@ def published(plan_path, smoke_path, arch, image, output):
                    'plan_sha256': digest(raw), 'image_id': info['Id'], 'reference': refs[0], 'tag': image,
                    'smoke_sha256': digest(Path(smoke_path).read_bytes()), 'source_metadata': plan,
                    'visibility': 'not_verified_push_is_not_public_access'})
+
+
+def push_checked(plan_path, smoke_path, arch, output):
+    """Bind the publication source before tag/push, then retain the pushed digest."""
+    plan, raw = verify_plan(plan_path); smoke = read(smoke_path)
+    require(smoke['status'] == 'pass' and smoke['plan_sha256'] == digest(raw)
+            and smoke['platform'] == 'linux/' + arch, 'published_smoke_binding')
+    checked_id = smoke['image_id']
+    require(re.fullmatch(r'sha256:[a-f0-9]{64}', checked_id) is not None, 'immutable_image_id_required')
+    info = image_inspect(checked_id)
+    require(info['Id'] == checked_id and info['Os'] + '/' + info['Architecture'] == 'linux/' + arch, 'published_image_not_tested')
+    require(all(info['Config']['Labels'].get(k) == v for k, v in image_labels(plan, arch, digest(raw)).items()), 'image_label_mismatch')
+    target = plan['image_repository'] + ':' + plan_outputs(plan, raw)['immutable_tag'] + '-' + arch
+    command(['docker', 'tag', checked_id, target])
+    require(image_inspect(target)['Id'] == checked_id, 'publication_tag_changed_before_push')
+    command(['docker', 'push', target], timeout=3600)
+    published(plan_path, smoke_path, arch, target, output)
 
 
 def index_plan(plan_path, receipts, output):
@@ -323,6 +397,8 @@ def main():
         elif name == 'published': p.add_argument('--smoke', type=Path, required=True)
     p = sub.add_parser('index-plan'); p.add_argument('--plan', type=Path, required=True); p.add_argument('--receipt', action='append', type=Path, required=True); p.add_argument('--output', type=Path, required=True)
     p = sub.add_parser('publish-index'); p.add_argument('--index-plan', type=Path, required=True); p.add_argument('--output', type=Path, required=True)
+    p = sub.add_parser('push-checked'); p.add_argument('--plan', type=Path, required=True); p.add_argument('--smoke', type=Path, required=True)
+    p.add_argument('--arch', choices=['amd64', 'arm64'], required=True); p.add_argument('--output', type=Path, required=True)
     sub.add_parser('inside-smoke'); p = sub.add_parser('seed-exec'); p.add_argument('arguments', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.command == 'plan':
@@ -343,6 +419,7 @@ def main():
     elif args.command == 'published': published(args.plan, args.smoke, args.arch, args.image, args.output)
     elif args.command == 'index-plan': index_plan(args.plan, args.receipt, args.output)
     elif args.command == 'publish-index': publish_index(args.index_plan, args.output)
+    elif args.command == 'push-checked': push_checked(args.plan, args.smoke, args.arch, args.output)
     elif args.command == 'inside-smoke': print(json.dumps(in_container_smoke()))
     elif args.command == 'seed-exec':
         executable = seed_selection()['executable']; arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments

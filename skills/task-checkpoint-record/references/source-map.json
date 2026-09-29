@@ -111,9 +111,9 @@
     },
     {
       "destination": "references/docs/image-updates.md",
-      "projected_sha256": "3ff94d019dd0a040a2bd5b31093e72c175683672df6f1b6402362f3b0bd12458",
+      "projected_sha256": "7f091f68d42464cb24c18b1c6a5340959702c267610676d603a88b5d2008265e",
       "source": "docs/image-updates.md",
-      "source_sha256": "ac4503ac086690f47965d2fa53dd12a54d61f08ddbb6b028ec0e034201cd4506"
+      "source_sha256": "c524f21c8dde9d740b9287af67a93dd61c84977e52200eeaf7c28156a01da5ab"
     },
     {
       "destination": "references/docs/implementation-plan.md",
