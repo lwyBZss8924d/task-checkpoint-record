@@ -9,6 +9,12 @@ Codex/Claude artifacts also supply native Hooks and Claude commands. Installing
 the CLI, authenticating, binding a task, enabling/trusting Hooks and starting a
 worker remain explicit operations. Builds and imports perform no model call.
 
+CLI help and App Server client identity use the recorder package version. TypeScript
+bundles embed `package.json` at build time. The Python runtime qualifier reads the
+same package metadata in a source bundle, or the recorder source version retained
+in the owned CLI installation manifest. This product version is distinct from
+the observed native Codex version and the versioned protocol schemas.
+
 The compatibility manifest follows the supported `plugin-creator` layout. Current
 [OpenAI plugin packaging guidance](https://developers.openai.com/plugins/build/plugins)
 also supports the root portable manifest. Both carry the same package identity and
@@ -75,7 +81,7 @@ marketplace ZIP into a durable versioned package directory. Use that extracted
 directory as the marketplace root, then select the current Codex profile explicitly:
 
 ```sh
-codex plugin marketplace add /absolute/task-checkpoint-tools-0.3.0-marketplace --json
+codex plugin marketplace add /absolute/task-checkpoint-tools-0.3.1-marketplace --json
 codex plugin add task-checkpoint-tools@task-checkpoint-tools --json
 codex plugin list --json
 ```

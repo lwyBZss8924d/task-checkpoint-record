@@ -99,6 +99,7 @@ describe("client plugin activation contract", () => {
       cpSync(join(repo, "integrations/plugins", client, "task-checkpoint-record"), plugin, { recursive: true });
       mkdirSync(join(plugin, "runtime/recorder"), { recursive: true });
       cpSync(join(repo, "src"), join(plugin, "runtime/recorder/src"), { recursive: true });
+      cpSync(join(repo, "package.json"), join(plugin, "runtime/recorder/package.json"));
       mkdirSync(join(plugin, "runtime/recorder/config"));
       cpSync(join(repo, "config/runtime.bunfig.toml"), join(plugin, "runtime/recorder/config/runtime.bunfig.toml"));
       // The actual client artifact includes this imported contract beside src/.

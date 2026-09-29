@@ -5,6 +5,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { appServerArguments, executionPolicy, sandboxMatches, selectModel, SUPPORTED_CODEX_VERSIONS, type CodexProtocolVersion, type ExecutionMode, type ModelRole, type ModelSelection } from "./model-policy.ts";
 import { validateRuntimeQualification, type QualifiedCodexRuntime } from "./runtime-update.ts";
+import { version } from "../package.json";
 
 export type AppServerLimits = {
   deadlineMs?: number; shutdownMs?: number; maxInputBytes?: number; maxOutputBytes?: number;
@@ -351,7 +352,7 @@ export async function runAppServerTask<T>(options: AppServerTaskOptions<T>): Pro
   };
   try {
     const initialized = await connection.request("initialize", {
-      clientInfo: { name: "task_checkpoint_record", title: "Task Checkpoint Record", version: "0.2.0" },
+      clientInfo: { name: "task_checkpoint_record", title: "Task Checkpoint Record", version },
       capabilities: { experimentalApi: true, explicitGatewayOauth: true, requestAttestation: false,
         optOutNotificationMethods: ["item/reasoning/textDelta", "item/reasoning/summaryTextDelta", "item/agentMessage/delta", "rawResponseItem/completed"] },
     });

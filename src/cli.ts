@@ -12,9 +12,10 @@ import { authPlan, setupAuth, runAuth } from "./config-runtime.ts";
 import { bunRuntimeFlags } from "./bun-runtime.ts";
 import { agentActivationSchema } from "./agent-config.ts";
 import { agentHookOutput } from "./agent-hook.ts";
+import { version } from "../package.json";
 
 const HELP={
-  name:"task-checkpoint-record",version:"0.2.0",schema_version:"task-checkpoint-record.help.v1",
+  name:"task-checkpoint-record",version,schema_version:"task-checkpoint-record.help.v1",
   commands:{
     "config init":"--file NEW_JSON [--provider openrouter|typesafe]; new unified config, no credentials/state/auth effects",
     "config check":"--config JSON; validate and resolve explicit configuration, no credential or provider checks",
