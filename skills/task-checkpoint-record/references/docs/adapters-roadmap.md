@@ -11,7 +11,7 @@ removal contract. A package inventory and a native callback are different eviden
 | Codex plugin | Full plugin overlay, Skills and seven lifecycle Hook definitions | Contained runtime inventory, native schema/discovery/trust, configured callback delivery, activation and removal |
 | Claude Code plugin | Full plugin overlay, six Hooks, six slash commands and a workflow Skill | Manifest and command validation, native component discovery, configured callbacks and command invocation, removal retaining user data |
 | Shared Skills suite | Router plus both component Skills and their local references | Install the suite as one package; copy each Skill independently and verify its local references |
-| Pi package/extension | **TODO**: qualify the existing opt-in adapter template as a real package | Explicit `pi.extensions`/`pi.skills`, default ExtensionAPI factory, scoped install/load/event/remove checks and reviewed npm publication |
+| Pi package/extension | Self-contained archive, explicit Pi manifest, default factory, bounded CLI bridge and Skill | Exact host API/type checks, isolated local install/load/synthetic callbacks/remove; npm/OIDC/catalog publication remains separate |
 
 The source and release builders include client-specific inventories, licenses,
 checksums and marketplace catalogs. Local installation requires explicit runtime
@@ -43,14 +43,14 @@ and [Claude plugin publication guide](https://code.claude.com/docs/en/plugins/pu
 Claude Code packages containing local executable components must not be described
 as automatically compatible with claude.ai or Cowork.
 
-## Pi TODO acceptance
+## Pi package and remaining publication work
 
-The local research baseline used Pi `0.87.1` at commit
-`c1449660c83fd00a7c71d5f7e1bd29fafd400550`. The existing adapter template was prepared
-against another commit with the same version; requalify the exact callbacks and
-types before package adoption. Do not infer compatibility from the version alone.
+The selected baseline is Pi `0.87.1` at commit
+`b485fa3128c3d8dae87cb59da6e95db0f991c5bc`. Earlier research/template commits had the
+same version string; the host check compares the actual selected API declarations.
+See [Pi package](pi-package.md) for exact archive, runtime and event contracts.
 
-The next milestone must:
+The package delivery checks must:
 
 1. Add the native package manifest and default extension factory, with explicit
    component paths and inert import/registration.
@@ -65,6 +65,6 @@ The next milestone must:
    configuration. The `pi-package` keyword enables discovery eligibility; actual
    catalog appearance must be observed separately.
 
-References: [pinned Pi package contract](https://github.com/earendil-works/pi/blob/c1449660c83fd00a7c71d5f7e1bd29fafd400550/packages/coding-agent/docs/packages.md),
+References: [pinned Pi package contract](https://github.com/earendil-works/pi/blob/b485fa3128c3d8dae87cb59da6e95db0f991c5bc/packages/coding-agent/docs/packages.md),
 [Pi package catalog](https://pi.dev/packages). No Pi publication or vendor-directory
-acceptance is implied by this TODO.
+acceptance is implied by the archive or its checks.

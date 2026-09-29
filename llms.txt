@@ -17,6 +17,7 @@
 - [Model runtime](docs/app-server-runtime.md): explicit prepared-input calls, native identities and lifecycle limits.
 - [Distribution](docs/distribution.md): public packages, plugins, CI, containers and version compatibility.
 - [Client plugins](docs/client-plugins.md): Codex/Claude Hooks, Claude slash commands, explicit configuration and removal.
-- [Adapter roadmap](docs/adapters-roadmap.md): client-specific publication states and Pi package/extension TODO.
+- [Pi package](docs/pi-package.md): self-contained extension, bounded lifecycle bridge, isolated host checks and separate npm publication.
+- [Adapter roadmap](docs/adapters-roadmap.md): client-specific implementation and publication states.
 - [Implementation plan](docs/implementation-plan.md): phased delivery and later lifecycle work.
 - [Engineering lessons](docs/engineering-lessons.md): concrete failure mechanisms and the focused checks that prevent recurrence.

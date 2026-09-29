@@ -1,0 +1,5 @@
+# Task Checkpoint Record for Pi
+
+- [Workflow](skills/task-checkpoint-pi/SKILL.md): select configuration, bind one session and recall one window.
+- [Package guide](README.md): runtime prerequisites, lifecycle mapping and installation.
+- [Source inventory](pi-package.json): exact recorder/helper commits and contained payload digests.

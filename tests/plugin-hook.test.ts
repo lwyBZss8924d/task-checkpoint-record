@@ -49,6 +49,8 @@ describe("client plugin activation contract", () => {
     const path = join(temp(), "config $() ' spaces.json");
     expect(planPluginHook("claude", env(path, "a".repeat(64)))).toEqual({ disposition: "dispatch", argv:
       ["hook", "--config", path, "--config-sha256", "a".repeat(64), "--client", "claude", "--profile", "fixture"] });
+    expect(planPluginHook("pi", env(path, "a".repeat(64)))).toEqual({ disposition: "dispatch", argv:
+      ["hook", "--config", path, "--config-sha256", "a".repeat(64), "--client", "pi", "--profile", "fixture"] });
     for (const override of [{ TCR_CONFIG: "relative.json" }, { TCR_CONFIG_SHA256: "stale" },
       { TCR_PROFILE: "../profile" }, { TCR_PROFILE: "profile\ncommand" }]) {
       expect(planPluginHook("codex", { ...env(path, "a".repeat(64)), ...override }).argv).toBeNull();
