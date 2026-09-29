@@ -55,7 +55,9 @@ with tempfile.TemporaryDirectory(prefix='recorder-bundle-smoke-') as temporary:
     plan_sha = hashlib.sha256(plan.read_bytes()).hexdigest()
     run(bun, "--no-env-file", str(bundle / 'scripts/install-cli.ts'), 'apply', '--plan', str(plan), '--sha256', plan_sha, '--output', str(receipt))
     recorder = str(prefix / 'task-checkpoint-record'); helper = str(prefix / 'ultrafast-atif-helper')
-    assert run(recorder, '--help')['name'] == 'task-checkpoint-record'
+    recorder_help = run(recorder, '--help')
+    assert recorder_help['name'] == 'task-checkpoint-record'
+    assert recorder_help['version'] == manifest['recorder']['version']
     run(helper, '--help')
     state = str(root / 'state'); run(recorder, 'init', '--state', state)
     sources = root / 'synthetic'; sources.mkdir()

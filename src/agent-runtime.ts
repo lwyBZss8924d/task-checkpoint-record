@@ -5,6 +5,7 @@ import { AppServerConnection, AppServerError, appServerEnvironment, observeAppSe
 import { appServerArguments, executionPolicy, sandboxMatches, selectModel,
   type CodexProtocolVersion, type ExecutionMode, type ModelRole, type ModelSelection } from "./model-policy.ts";
 import type { QualifiedCodexRuntime } from "./runtime-update.ts";
+import { version } from "../package.json";
 
 export type AgentDataClass = "metadata_only" | "synthetic" | "redacted" | "owner_selected_source";
 export interface AgentToolContext { signal: AbortSignal; threadId: string; turnId: string; callId: string }
@@ -430,7 +431,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
   const timer = setTimeout(() => connection.abort("agent_startup_deadline"), bounds.startupMs);
   let startupThreadId: string | null = null, startupSessionId: string | null = null;
   try {
-    const init = await connection.request("initialize", { clientInfo: { name: "task_checkpoint_record_agent", version: "0.2.0" },
+    const init = await connection.request("initialize", { clientInfo: { name: "task_checkpoint_record_agent", version },
       capabilities: { experimentalApi: true, explicitGatewayOauth: true, requestAttestation: false,
         optOutNotificationMethods: ["item/reasoning/textDelta", "item/reasoning/summaryTextDelta", "item/agentMessage/delta", "rawResponseItem/completed"] } });
     const protocolVersion = observeAppServerVersion(object(init) ? init.userAgent : undefined, qualification);

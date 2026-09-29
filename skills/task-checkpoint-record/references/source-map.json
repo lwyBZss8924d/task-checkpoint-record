@@ -93,9 +93,9 @@
     },
     {
       "destination": "references/docs/distribution.md",
-      "projected_sha256": "96d91878ad0c76ab73d6da218d0543f3974ed64be0df0e8ce5098458460a6290",
+      "projected_sha256": "674cd5b084cdf6c4e45223bcd87f9adffcd380415059881caca2bd581d375130",
       "source": "docs/distribution.md",
-      "source_sha256": "90193df20115287c19fca4a361a43faee676ef0a32c106cc3412c80875139605"
+      "source_sha256": "6fbdc3c42573140d080d561880b8b188cb714cdab49aac57963fcc90bd3bf412"
     },
     {
       "destination": "references/docs/engineering-lessons.md",
@@ -129,9 +129,9 @@
     },
     {
       "destination": "references/docs/pi-package.md",
-      "projected_sha256": "424a289a24feff0e412510a41e0fe9b7442b12d99e7c1140af67a81d8aaa943f",
+      "projected_sha256": "06d8c6dc77e77f070612249a19f078b77efad0725ee32f904605975270fe2cdc",
       "source": "docs/pi-package.md",
-      "source_sha256": "c30cf20c6d41d61dd4a60e5710fe22b2c6b43b81a3dc707567923615f35d1408"
+      "source_sha256": "10852ad071e36b774c16c3fd6d31d1b0b71c17af9e080f63a6185e580ca35e43"
     },
     {
       "destination": "references/docs/runtime-updates.md",

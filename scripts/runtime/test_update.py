@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -64,6 +65,64 @@ class UpdateTests(unittest.TestCase):
         options = {'force': True, 'resolve': lambda: release(version), 'install': install_fake, 'qualify_candidate': qualify_fake}
         options.update(overrides)
         return runtime.ensure(self.root, **options)
+
+    def test_initialize_identifies_product_version_from_source_and_installed_metadata(self):
+        self.assertEqual(runtime.product_version(), json.loads((runtime.REPO / 'package.json').read_bytes())['version'])
+        for layout, version in [('source', '9.8.7-source-fixture'), ('installed', '6.5.4+installed.fixture')]:
+            with self.subTest(layout=layout):
+                directory = self.root.parent / layout
+                directory.mkdir()
+                if layout == 'source':
+                    (directory / 'package.json').write_text(json.dumps({'name': 'task-checkpoint-record', 'version': version}))
+                else:
+                    (directory / 'manifest.json').write_text(json.dumps({
+                        'schema_version': 'task-checkpoint-record.install-manifest.v1', 'owner': 'task-checkpoint-record.cli.v1',
+                        'sources': [{'name': 'ultrafast-atif-helper', 'version': '1.0.0'}, {'name': 'task-checkpoint-record', 'version': version}]}))
+                log = directory / 'messages.jsonl'
+                executable = directory / 'fake-codex'
+                executable.write_text('#!' + str(Path(sys.executable).resolve()) + '\n' +
+                    'import json, sys\n' +
+                    'for line in sys.stdin:\n' +
+                    '    message = json.loads(line)\n' +
+                    '    with open(' + repr(str(log)) + ', "a") as output: output.write(json.dumps(message) + "\\n")\n' +
+                    '    if message["method"] == "initialize":\n' +
+                    '        print(json.dumps({"id": message["id"], "result": {"userAgent": "codex_cli_rs/0.159.0 (fixture)"}}), flush=True)\n')
+                executable.chmod(0o700)
+                with patch.object(runtime, 'REPO', directory):
+                    result = runtime.initialize_probe(str(executable), directory, {'PATH': os.defpath}, '0.159.0')
+                messages = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertEqual([message['method'] for message in messages], ['initialize', 'initialized'])
+                self.assertEqual(messages[0]['params']['clientInfo'], {'name': 'task-checkpoint-runtime-qualification', 'version': version})
+                self.assertEqual(result['observed_version'], '0.159.0')
+                self.assertEqual((result['threads_started'], result['turns_started'], result['process_exit_code']), (0, 0, 0))
+
+    def test_invalid_product_identity_fails_before_qualification_process(self):
+        directory = self.root.parent / 'identity'
+        directory.mkdir()
+        documents = [
+            {'name': 'other-product', 'version': '1.0.0'},
+            {'name': 'task-checkpoint-record'},
+            {'name': 'task-checkpoint-record', 'version': '1.0.0\nspoofed'},
+            [],
+        ]
+        with patch.object(runtime, 'REPO', directory), patch.object(runtime.subprocess, 'Popen') as spawn:
+            for metadata in documents:
+                (directory / 'package.json').write_text(json.dumps(metadata))
+                with self.assertRaisesRegex(ValueError, 'runtime_product_identity_invalid'):
+                    runtime.initialize_probe('never-spawn', directory, {}, '0.159.0')
+            (directory / 'package.json').unlink()
+            for metadata in [
+                {'schema_version': 'task-checkpoint-record.install-manifest.v1', 'owner': 'foreign', 'sources': []},
+                {'schema_version': 'task-checkpoint-record.install-manifest.v1', 'owner': 'task-checkpoint-record.cli.v1',
+                 'sources': [{'name': 'task-checkpoint-record', 'version': '1.0.0'}] * 2},
+            ]:
+                (directory / 'manifest.json').write_text(json.dumps(metadata))
+                with self.assertRaisesRegex(ValueError, 'runtime_product_identity_invalid'):
+                    runtime.initialize_probe('never-spawn', directory, {}, '0.159.0')
+            (directory / 'package.json').symlink_to(directory / 'manifest.json')
+            with self.assertRaisesRegex(ValueError, 'runtime_symlink_denied'):
+                runtime.initialize_probe('never-spawn', directory, {}, '0.159.0')
+            spawn.assert_not_called()
 
     def test_automatic_a_to_b_promotion_preserves_a_bytes(self):
         a = self.ensure()

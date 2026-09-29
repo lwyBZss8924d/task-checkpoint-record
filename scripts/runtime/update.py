@@ -76,6 +76,30 @@ def read_json(path, limit=2 * 1024 * 1024):
         return json.loads(file.read())
 
 
+def product_version():
+    """Source bundles carry package.json; CLI installs retain an owned manifest."""
+    package = REPO / 'package.json'
+    if os.path.lexists(package):
+        metadata = read_json(package)
+        if not isinstance(metadata, dict) or metadata.get('name') != 'task-checkpoint-record':
+            raise ValueError('runtime_product_identity_invalid')
+        version = metadata.get('version')
+    else:
+        metadata = read_json(REPO / 'manifest.json')
+        if not isinstance(metadata, dict) or metadata.get('schema_version') != 'task-checkpoint-record.install-manifest.v1' or metadata.get('owner') != 'task-checkpoint-record.cli.v1':
+            raise ValueError('runtime_product_identity_invalid')
+        sources = metadata.get('sources')
+        if not isinstance(sources, list):
+            raise ValueError('runtime_product_identity_invalid')
+        selected = [source for source in sources if isinstance(source, dict) and source.get('name') == 'task-checkpoint-record']
+        if len(selected) != 1:
+            raise ValueError('runtime_product_identity_invalid')
+        version = selected[0].get('version')
+    if not isinstance(version, str) or len(version) > 128 or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?', version):
+        raise ValueError('runtime_product_identity_invalid')
+    return version
+
+
 def owned_directory(path, *, create=False):
     """Validate fixed managed children before staging, probing or audit writes."""
     safe(path, owned=True)
@@ -173,13 +197,14 @@ def native_probe(argv, cwd, env):
 
 
 def initialize_probe(executable, cwd, env, version):
+    client_version = product_version()
     with tempfile.TemporaryFile() as err:
         process = subprocess.Popen([executable, 'app-server', '--listen', 'stdio://'], cwd=cwd, env=env,
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err)
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
         try:
-            request = {'id': 1, 'method': 'initialize', 'params': {'clientInfo': {'name': 'task-checkpoint-runtime-qualification', 'version': '0.2.0'}, 'capabilities': {'experimentalApi': True}}}
+            request = {'id': 1, 'method': 'initialize', 'params': {'clientInfo': {'name': 'task-checkpoint-runtime-qualification', 'version': client_version}, 'capabilities': {'experimentalApi': True}}}
             process.stdin.write((canonical(request) + '\n').encode()); process.stdin.flush()
             deadline = time.monotonic() + 20
             pending = b''; total = 0; reply = None
@@ -222,6 +247,7 @@ def initialize_probe(executable, cwd, env, version):
             if process.poll() is None:
                 process.kill()
             process.wait()
+            process.stdout.close()
 
 
 def qualify(package, lock, arch):

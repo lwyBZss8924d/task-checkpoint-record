@@ -30,7 +30,7 @@ is loaded from its selected path, so retain that accepted package directory.
 `pi remove /absolute/extracted/package` removes its declaration; it does not delete
 external recorder state, task sources or the dedicated Codex account directory.
 
-`pi install npm:task-checkpoint-record-pi@0.3.0` is only applicable after an
+`pi install npm:task-checkpoint-record-pi@0.3.1` is only applicable after an
 authorized npm publication has been verified. This release builder does not
 publish to npm or configure a trusted publisher. A package namespace and publisher
 identity must be established separately. A `pi-package` keyword creates discovery

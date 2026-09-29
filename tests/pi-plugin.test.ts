@@ -24,7 +24,7 @@ function packageFixture() {
   cpSync(join(repo, "integrations/plugins/pi/task-checkpoint-record"), pkg, { recursive: true });
   const runtime = join(pkg, "runtime/recorder"); mkdirSync(runtime, { recursive: true });
   cpSync(join(repo, "src"), join(runtime, "src"), { recursive: true });
-  for (const relative of ["config/runtime.bunfig.toml", "container/app-server-surface.json", "integrations/pi/task-checkpoint-record.v1.ts"]) {
+  for (const relative of ["package.json", "config/runtime.bunfig.toml", "container/app-server-surface.json", "integrations/pi/task-checkpoint-record.v1.ts"]) {
     mkdirSync(dirname(join(runtime, relative)), { recursive: true }); cpSync(join(repo, relative), join(runtime, relative));
   }
   const sourceRoot = join(root, "inputs"); mkdirSync(sourceRoot);
