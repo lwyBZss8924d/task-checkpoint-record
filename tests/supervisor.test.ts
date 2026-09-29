@@ -11,16 +11,16 @@ import { SupervisorDaemon, type SupervisorPtcFactory, type SupervisorRuntimeFact
 import { createSupervisorPolicy } from "../src/supervisor-policy.ts";
 import { canonical, fingerprint, openRegular, sha, TcrError } from "../src/security.ts";
 import { runHelper, runScoringHelper, workerOptions } from "../src/worker.ts";
-import type { AgentCloseReceipt, AgentIdentity, AgentSession, AgentTool, AgentTurnOptions, AgentTurnResult } from "../src/agent-runtime.ts";
+import { AgentToolArgumentsError, createAgentSession, type AgentCloseReceipt, type AgentIdentity, type AgentSession, type AgentTool, type AgentTurnOptions, type AgentTurnResult } from "../src/agent-runtime.ts";
 import type { SupervisorActivation, SupervisorPolicy, WorkerReport } from "../src/supervisor-types.ts";
 import type { NormalizedRecord } from "../src/types.ts";
 
 const roots:string[]=[],stores:Store[]=[],daemons:SupervisorDaemon[]=[];
 const helper=fileURLToPath(new URL("./fixture-helper.ts",import.meta.url));
 afterEach(async()=>{for(const d of daemons.splice(0))try{await d.close();}catch{}for(const s of stores.splice(0))s.close();for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true});});
-function setup(overrides:Partial<SupervisorPolicy>={},queued=false){
+function setup(overrides:Partial<SupervisorPolicy>={},queued=false,initialRecords=1){
   const root=realpathSync(mkdtempSync(join(tmpdir(),"tcr-supervisor-")));roots.push(root);const sourceRoot=join(root,"sources");mkdirSync(sourceRoot,{mode:0o700});
-  const source=join(sourceRoot,"raw.jsonl"),line=JSON.stringify({type:"message",entry_id:"synthetic-entry",text:"SYNTHETIC_BODY"})+"\n";writeFileSync(source,line,{mode:0o600});
+  const source=join(sourceRoot,"raw.jsonl"),line=JSON.stringify({type:"message",entry_id:"synthetic-entry",text:"SYNTHETIC_BODY"})+"\n";writeFileSync(source,line.repeat(initialRecords),{mode:0o600});
   const fixed=join(root,"fixed.bunfig.toml");writeFileSync(fixed,"# synthetic owned config\n",{mode:0o600});
   const runtime_config={recorder:{helper_command:[process.execPath,"--no-env-file","--no-install","--config="+fixed,helper],concurrency:2,max_jobs:64,timeout_ms:2000,lease_ms:4000,page_bytes:16384,page_limit:100,stdout_bytes:1048576}};
   const base=new Store(join(root,"state"),{initialize:true});stores.push(base);const store=new SupervisorStore(base);
@@ -36,7 +36,7 @@ function setup(overrides:Partial<SupervisorPolicy>={},queued=false){
 }
 function closeReceipt(identity:AgentIdentity,turns=1):AgentCloseReceipt{return{schemaVersion:"task-checkpoint.agent-close.v1",native:{threadId:identity.threadId,sessionId:identity.sessionId},pid:identity.pid,ownedProcessClosed:true,ownedProcessGroupClosed:true,hostHandlersSettled:true,turnsStarted:turns,reason:"owner_closed"};}
 function turnResult<T>(identity:AgentIdentity,turnId:string,output:T):AgentTurnResult<T>{return{schemaVersion:"task-checkpoint.agent-turn.v1",output,native:{threadId:identity.threadId,sessionId:identity.sessionId,turnId},requested:identity.requested,observed:identity.observed,input:{dataClass:"metadata_only",sha256:sha("synthetic"),bytes:9},usage:null,toolReceipts:[],runtime:{protocolVersion:"codex-0.157.1",pid:identity.pid,sessionOpen:true,turnIndex:1,elapsedMs:1,nativeCompactions:0,toolPolicy:"restricted-native-and-explicit-host-allowlist"}};}
-function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:boolean;badNativeGraph?:boolean;recommendAttention?:boolean}={}){
+function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:boolean;badNativeGraph?:boolean;recommendAttention?:boolean;beforeDelegate?:(tool:AgentTool,prompt:Record<string,any>)=>void}={}){
   let supervisors=0,workers=0,active=0,peak=0,closed=0;const observedThreads:string[]=[];
   const identity=(activation:SupervisorActivation,worker:boolean,id:number):AgentIdentity=>({threadId:(worker?"worker-thread-":"supervisor-thread-")+id,sessionId:(worker?"worker-session-":"supervisor-session-")+id,pid:10000+id,role:worker?"semantic-worker":"supervisor",requested:activation.policy[worker?"worker":"supervisor"],observed:activation.policy[worker?"worker":"supervisor"],protocolVersion:"codex-0.157.1"});
   const factory:SupervisorRuntimeFactory={
@@ -46,6 +46,7 @@ function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:
       const session:AgentSession={identity:id,closed:closedPromise,assertHealthy(){if(ended)throw new TcrError("synthetic_closed");},async runTurn<T>(turn:AgentTurnOptions<T>){
         const turnId="supervisor-turn-"+(++turns);observedThreads.push(id.threadId);turn.onStarted?.({threadId:id.threadId,sessionId:id.sessionId,turnId});
         const tool=(turn.tools??initialTools)[0];const tasks=Array.from({length:options.workers??2},(_,i)=>({task_key:"worker-"+i,objective:"Inspect this bounded source selection."}));
+        options.beforeDelegate?.(tool,JSON.parse(turn.input.text));
         const args=tool.validateArguments({tasks});const reply=await tool.execute(args,{threadId:id.threadId,turnId,callId:"delegate-"+turns,signal:turn.signal??new AbortController().signal});
         const evidence=(reply.value as any).workers.map((w:any)=>w.evidence_refs[0]);
         const output=turn.validateOutput({summary:"Bounded workers completed.",continuity_context:"Continue using the retained source handles.",findings:[{category:"progress",statement:"Each worker inspected scoped evidence.",evidence_refs:evidence.slice(0,32)}],next_actions:options.recommendAttention?[{action_id:"owner-review",reason:"Inspect the proposal before sealing.",evidence_refs:[evidence[0]]}]:[],recommendation:options.recommendAttention?"needs_attention":"continue"});
@@ -90,6 +91,90 @@ test("two workers make scoped tool calls and produce only an intermediate persis
   const resolved=s.store.resolve(proposal.deeplink) as any;expect(resolved.item["reduction.continuity_context"]).toContain("source handles");
   const evidence=s.store.resolve(resolved.item.evidence_deeplinks[0]) as any;expect(evidence.item.status).toBe("completed");expect(evidence.source_bytes_read).toBe(false);
   expect(()=>s.store.resolve("https://invalid.example/secret")).toThrow("foreign_agent_deeplink");expect(()=>s.store.resolve(proposal.deeplink,["lease_token"])).toThrow("unknown_agent_projection_field");
+});
+test("delegate rejects both empty selections before dispatch, then corrected omission admits one fanout",async()=>{
+  const s=setup();s.activate();let rejected=false;const selected:string[][]=[];
+  const f=fakeRuntime({beforeDelegate:(tool,prompt)=>{
+    expect(prompt.record_count).toBe(1);expect(prompt.record_preview).toHaveLength(1);
+    expect(Object.keys(prompt.record_preview[0]).sort()).toEqual(["kind","record_handle"]);
+    expect(prompt.record_selection).toContain("Omit record_handles");expect(prompt.instructions).toContain("successful");
+    const selector=(tool.inputSchema as any).properties.tasks.items.properties.record_handles;
+    expect(selector).toMatchObject({minItems:1,uniqueItems:true});expect(selector.description).toContain("Empty [] and null are invalid");
+    const invalid={tasks:[{task_key:"identity",objective:"Inspect current native identities.",record_handles:[]},{task_key:"continuity",objective:"Inspect current tool continuity.",record_handles:[]}]};
+    try{tool.validateArguments(invalid);}catch(error){expect(error).toBeInstanceOf(AgentToolArgumentsError);expect((error as AgentToolArgumentsError).hint).toContain("Omit record_handles");expect((error as AgentToolArgumentsError).hint).toContain("No workers were dispatched");rejected=true;}
+    expect(rejected).toBe(true);expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_workers").get() as any).n).toBe(0);
+    expect(s.base.db.query("SELECT state FROM agent_tool_calls WHERE worker_id IS NULL").all()).toEqual([{state:"arguments_rejected"}]);
+    expect((s.store.status() as any).activations[0].native_calls).toBe(1);
+  }});
+  const {d}=daemon(s,f,context=>{selected.push(context.snapshot.record_refs.map(r=>r.handle));return fakePtc(context);});
+  expect((await d.once()).state).toBe("succeeded");expect(selected).toHaveLength(2);expect(selected.every(handles=>handles.length===1)).toBe(true);
+  expect(f.status()).toMatchObject({supervisors:1,workers:2});
+  expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_events WHERE event='fanout_admitted'").get() as any).n).toBe(1);
+  expect(s.base.db.query("SELECT state FROM agent_tool_calls WHERE worker_id IS NULL ORDER BY rowid").all()).toEqual([{state:"arguments_rejected"},{state:"succeeded"}]);
+  expect((s.store.status() as any).activations[0]).toMatchObject({native_calls:3,tool_calls:4});
+});
+test("delegate rejects null, duplicate and foreign selectors and bounds supervisor metadata previews",async()=>{
+  const s=setup({},true,25);s.activate();
+  const f=fakeRuntime({beforeDelegate:(tool,prompt)=>{
+    expect(prompt.record_count).toBeGreaterThan(20);expect(prompt.record_preview).toHaveLength(20);
+    expect(JSON.stringify(prompt)).not.toContain("SYNTHETIC_BODY");
+    const handle=prompt.record_preview[0].record_handle;
+    for(const record_handles of [null,[handle,handle],["record:not-in-this-snapshot"]]){
+      expect(()=>tool.validateArguments({tasks:[{task_key:"inspect",objective:"Inspect current metadata.",record_handles}]})).toThrow(AgentToolArgumentsError);
+    }
+    expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_workers").get() as any).n).toBe(0);
+  }});
+  const {d}=daemon(s,f);expect((await d.once()).state).toBe("succeeded");expect(f.status().workers).toBe(2);
+});
+test("stdio supervisor corrects empty delegate selections within the same turn and dispatches workers only once",async()=>{
+  const s=setup();s.activate();const nativeHome=join(s.root,"synthetic-native-home"),wire=join(s.root,"delegate-wire.jsonl"),executable=join(s.root,"synthetic-stdio-supervisor");
+  mkdirSync(nativeHome,{mode:0o700});
+  const script=`#!${process.execPath}\n`+String.raw`
+import {appendFileSync} from "node:fs";
+import {createInterface} from "node:readline";
+const send=x=>process.stdout.write(JSON.stringify(x)+"\n"),thread="synthetic-supervisor-thread",turn="synthetic-supervisor-turn";
+const tasks=[{task_key:"identity",objective:"Inspect current native identities."},{task_key:"continuity",objective:"Inspect current tool continuity."}];
+function call(callId,args){
+ send({method:"item/started",params:{threadId:thread,turnId:turn,item:{type:"dynamicToolCall",id:callId,tool:"tcr_delegate",namespace:null,status:"inProgress"}}});
+ send({id:callId,method:"item/tool/call",params:{threadId:thread,turnId:turn,callId,tool:"tcr_delegate",namespace:null,arguments:args}});
+}
+createInterface({input:process.stdin}).on("line",line=>{
+ const m=JSON.parse(line);appendFileSync(WIRE,JSON.stringify(m)+"\n");
+ if(m.method==="initialize"){send({id:m.id,result:{userAgent:"task_checkpoint_record_agent/0.159.0 (synthetic)"}});return;}
+ if(m.method==="initialized")return;
+ if(m.method==="config/read"){send({id:m.id,result:{config:{mcp_servers:{}}}});return;}
+ if(m.method==="account/read"){send({id:m.id,result:{account:{type:"chatgpt"},requiresOpenaiAuth:true}});return;}
+ if(m.method==="model/list"){send({id:m.id,result:{data:["gpt-6-sol","gpt-6-luna"].map(model=>({model,supportedReasoningEfforts:[{reasoningEffort:"medium"},{reasoningEffort:"high"}]})),nextCursor:null}});return;}
+ if(m.method==="thread/start"){send({id:m.id,result:{thread:{id:thread,sessionId:"synthetic-supervisor-session",ephemeral:false},model:m.params.model,reasoningEffort:m.params.config.model_reasoning_effort,modelProvider:"openai",cwd:m.params.cwd,approvalPolicy:"never",approvalsReviewer:"user",sandbox:{type:"readOnly",networkAccess:false}}});return;}
+ if(m.method==="turn/start"){send({id:m.id,result:{turn:{id:turn,status:"inProgress",items:[]}}});call("empty-selection",{tasks:tasks.map(t=>({...t,record_handles:[]}))});return;}
+ if(m.id==="empty-selection"&&m.result){
+  const value=JSON.parse(m.result.contentItems[0].text).value;
+  if(m.result.success||value.error!=="invalid_arguments"||!value.hint?.includes("Omit record_handles"))throw Error("missing_actionable_rejection");
+  send({method:"item/completed",params:{threadId:thread,turnId:turn,item:{type:"dynamicToolCall",id:m.id,tool:"tcr_delegate",namespace:null,status:"failed",success:false}}});
+  call("corrected-omission",{tasks});return;
+ }
+ if(m.id==="corrected-omission"&&m.result){
+  if(!m.result.success)throw Error("corrected_arguments_failed");
+  const value=JSON.parse(m.result.contentItems[0].text).value,refs=value.workers.map(w=>w.evidence_refs[0]);
+  const tool={type:"dynamicToolCall",id:m.id,tool:"tcr_delegate",namespace:null,status:"completed",success:true};
+  send({method:"item/completed",params:{threadId:thread,turnId:turn,item:tool}});
+  const answer={type:"agentMessage",id:"synthetic-final",phase:"final_answer",text:JSON.stringify({summary:"Two scoped workers completed.",continuity_context:"Continue with the returned source evidence.",findings:[{category:"progress",statement:"Scoped evidence was inspected.",evidence_refs:refs}],next_actions:[],recommendation:"continue"})};
+  send({method:"item/completed",params:{threadId:thread,turnId:turn,item:answer}});
+  send({method:"turn/completed",params:{threadId:thread,turn:{id:turn,status:"completed",items:[tool,answer]}}});
+ }
+});
+`.replace("WIRE",JSON.stringify(wire));
+  writeFileSync(executable,script,{mode:0o700});const f=fakeRuntime();
+  f.factory.createSupervisor=async(activation,tools,signal)=>createAgentSession({codexExecutable:executable,codexHome:nativeHome,cwd:s.root,selection:activation.policy.supervisor,tools,signal,
+    limits:{startupMs:1000,deadlineMs:3000,sessionMs:10000,shutdownMs:50,toolDeadlineMs:1000}});
+  const {d}=daemon(s,f);const outcome=await d.once();expect(outcome.state).toBe("succeeded");expect(f.status().workers).toBe(2);
+  const messages=readFileSync(wire,"utf8").trim().split("\n").map(line=>JSON.parse(line));
+  const bad=messages.find(m=>m.id==="empty-selection"&&m.result),good=messages.find(m=>m.id==="corrected-omission"&&m.result);
+  expect(bad.result.success).toBe(false);expect(JSON.parse(bad.result.contentItems[0].text).value.error).toBe("invalid_arguments");expect(good.result.success).toBe(true);
+  expect(messages.filter(m=>m.method==="turn/start")).toHaveLength(1);
+  expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_events WHERE event='fanout_admitted'").get() as any).n).toBe(1);
+  const proposal=JSON.parse((s.base.db.query("SELECT body FROM agent_proposals").get() as any).body),supervisor=proposal.native_calls.find((call:any)=>call.role==="supervisor");
+  expect(supervisor.native.runtime_receipt.tool_receipts.map((receipt:any)=>receipt.status)).toEqual(["arguments_rejected","succeeded"]);
 });
 test("unified daemon drains only activated binding ETL and reuses one native supervisor across two windows",async()=>{
   const s=setup({},true);s.activate();const{d,fake}=daemon(s);expect((await d.once()).state).toBe("succeeded");

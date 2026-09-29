@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, chmod, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createAgentSession, runAgentTurn, AgentRuntimeError, type AgentSession, type AgentSessionOptions, type AgentTool } from "../src/agent-runtime.ts";
+import { createAgentSession, runAgentTurn, AgentRuntimeError, AgentToolArgumentsError, type AgentSession, type AgentSessionOptions, type AgentTool } from "../src/agent-runtime.ts";
 import { fixtureQualifiedRuntime } from "./fixture-qualified-runtime.ts";
 
 const roots: string[] = [], sessions: AgentSession[] = [];
@@ -155,6 +155,25 @@ test("invalid arguments return bounded tool failure without executing handler", 
   const t = tool(); t.execute = () => { executed = true; throw Error("should not run"); };
   const s = await create({ ...f.options, tools: [t] }); const result = await s.runTurn(request());
   expect(executed).toBe(false); expect(result.output.ok).toBe(false); expect(result.toolReceipts[0].status).toBe("arguments_rejected");
+});
+test("trusted argument corrections are bounded and returned as invalid_arguments without executing the handler",async()=>{
+  const f=await fixture("bad-args");let executed=false;const t=tool();
+  const hint="Omit record_handles for the current window, or supply a nonempty list. Empty [] is invalid; no workers were dispatched.";
+  t.validateArguments=()=>{throw new AgentToolArgumentsError(hint);};t.execute=()=>{executed=true;throw Error("must_not_execute");};
+  const s=await create({...f.options,tools:[t]});const result=await s.runTurn(request());
+  expect(executed).toBe(false);expect(result.toolReceipts[0].status).toBe("arguments_rejected");
+  const reply=(await f.messages()).find(m=>m.result?.contentItems);
+  expect(reply.result.success).toBe(false);expect(JSON.parse(reply.result.contentItems[0].text)).toEqual({data_class:"metadata_only",value:{error:"invalid_arguments",hint}});
+  expect(Buffer.byteLength(hint)).toBeLessThanOrEqual(512);
+  expect(()=>new AgentToolArgumentsError("x".repeat(513))).toThrow("invalid_tool_argument_hint");
+  expect(()=>new AgentToolArgumentsError("unsafe\ncontent")).toThrow("invalid_tool_argument_hint");
+});
+test("arbitrary validator errors do not leak their message into the native argument reply",async()=>{
+  const f=await fixture("bad-args"),t=tool();t.validateArguments=()=>{throw Error("SYNTHETIC_PRIVATE_EXCEPTION_DETAIL");};
+  const s=await create({...f.options,tools:[t]});await s.runTurn(request());
+  const reply=(await f.messages()).find(m=>m.result?.contentItems);
+  expect(JSON.parse(reply.result.contentItems[0].text).value).toEqual({error:"invalid_arguments"});
+  expect(reply.result.contentItems[0].text).not.toContain("SYNTHETIC_PRIVATE_EXCEPTION_DETAIL");
 });
 test.each(["unknown-tool", "approval", "cross-thread", "cross-turn", "namespace", "duplicate-call", "conflict"])("%s poisons and closes the native session", async mode => {
   const f = await fixture(mode); const s = await create(f.options);

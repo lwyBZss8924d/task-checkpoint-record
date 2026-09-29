@@ -57,9 +57,9 @@
     },
     {
       "destination": "references/docs/agent-supervisor-plan.md",
-      "projected_sha256": "c4b86a8fa66a60d268c4f0513cdfbd57aeb59e16fd6004758bf6259027987cfd",
+      "projected_sha256": "5d68e2fa70553fb46ffcd9e63fafc267425db74340fc3cfbc3cd07c04a63d1c2",
       "source": "docs/agent-supervisor-plan.md",
-      "source_sha256": "c2f508b26eb9c7f2d04cb2699968524d3744c931d64035252dbe76cabaad13b2"
+      "source_sha256": "d80039e48f3dac01073ba913458057f3816fb9310a8a908b625a0b4d82127e62"
     },
     {
       "destination": "references/docs/app-server-runtime.md",

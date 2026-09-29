@@ -9,6 +9,15 @@ import type { QualifiedCodexRuntime } from "./runtime-update.ts";
 export type AgentDataClass = "metadata_only" | "synthetic" | "redacted" | "owner_selected_source";
 export interface AgentToolContext { signal: AbortSignal; threadId: string; turnId: string; callId: string }
 export interface AgentToolResult { dataClass: AgentDataClass; value: unknown }
+/** A host-authored correction only; arbitrary validator errors are never echoed. */
+export class AgentToolArgumentsError extends Error {
+  constructor(readonly hint: string) {
+    super("invalid_arguments");
+    if (typeof hint !== "string" || !hint.trim() || Buffer.byteLength(hint) > 512 || /[\u0000-\u001f\u007f]/u.test(hint)) {
+      throw new Error("invalid_tool_argument_hint");
+    }
+  }
+}
 export interface AgentTool {
   name: string;
   description: string;
@@ -285,7 +294,11 @@ class ResidentSession implements AgentSession {
     };
     let args: unknown;
     try { args = JSON.parse(json(tool.validateArguments(JSON.parse(argumentsText)), this.bounds.maxToolArgumentBytes)); }
-    catch { receipt.status = "arguments_rejected"; return reply({ dataClass: "metadata_only", value: { error: "invalid_arguments" } }, false); }
+    catch (error) {
+      receipt.status = "arguments_rejected";
+      const hint = error instanceof AgentToolArgumentsError && typeof error.hint === "string" && Buffer.byteLength(error.hint) <= 512 && !/[\u0000-\u001f\u007f]/u.test(error.hint) ? error.hint : undefined;
+      return reply({ dataClass: "metadata_only", value: { error: "invalid_arguments", ...(hint === undefined ? {} : { hint }) } }, false);
+    }
     const abort = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined;
     const context = Object.freeze({ signal: abort.signal, threadId: this.identity.threadId, turnId: actualTurn, callId });
     const execution = Promise.resolve().then(() => {

@@ -112,6 +112,12 @@ then produces a validated reduction in the same native turn. A normal nonempty
 round requires at least one delegated worker and a successful helper tool call
 from each accepted worker; a prose-only answer cannot satisfy this condition.
 
+Omit `record_handles` to give a worker the current window snapshot. When present,
+it must be a nonempty, unique subset of issued handles. An empty, null, duplicate
+or foreign selection is rejected before dispatch with a bounded argument hint;
+it never expands into the full snapshot. The supervisor prompt includes at most
+20 opaque handle-and-kind previews, without source bodies.
+
 Workers receive these tools through an injected helper adapter:
 
 | Tool | Model-selected arguments | Host-enforced scope |
