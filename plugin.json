@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "task-checkpoint-record",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Inspect local checkpoint metadata, plan explicit hook bindings, and retrieve exact task windows."
 }

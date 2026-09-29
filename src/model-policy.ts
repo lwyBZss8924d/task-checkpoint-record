@@ -1,8 +1,10 @@
 /** Requested model identities are exact; callers must opt into a different selection. */
 export type ModelRole = "supervisor" | "semantic-worker" | "eval";
 export type ModelSelection = { model: "gpt-6-sol" | "gpt-6-luna"; effort: "medium" | "high" };
+export type ExecutionMode = "read-only" | "danger-full-access";
+export type CodexProtocolVersion = `codex-${number}.${number}.${number}`;
 /** Explicit offline-contract/test support; no open-ended version range. */
-export const SUPPORTED_CODEX_VERSIONS = ["0.157.1", "0.158.0"] as const;
+export const SUPPORTED_CODEX_VERSIONS = ["0.157.1", "0.158.0", "0.159.0"] as const;
 export type SupportedCodexVersion = typeof SUPPORTED_CODEX_VERSIONS[number];
 
 export function selectModel(role: ModelRole = "supervisor", selection?: ModelSelection): ModelSelection {
@@ -16,7 +18,7 @@ export function selectModel(role: ModelRole = "supervisor", selection?: ModelSel
   return { model: value.model, effort: value.effort } as ModelSelection;
 }
 
-/** Verified against Codex 0.157.1 and 0.158.0 config schemas; not an all-tools deny policy. */
+/** Shared scoped-tool settings; the selected execution mode controls native sandboxing. */
 export const RESTRICTED_CONFIG: Readonly<Record<string, string | number | boolean | object>> = Object.freeze({
   model_provider: "openai", forced_login_method: "chatgpt", cli_auth_credentials_store: "file",
   approval_policy: "never", approvals_reviewer: "user", sandbox_mode: "read-only",
@@ -39,20 +41,39 @@ export const RESTRICTED_CONFIG: Readonly<Record<string, string | number | boolea
   "otel.exporter": "none", "otel.trace_exporter": "none", "otel.log_user_prompt": false,
 });
 
+/** App Server has no TUI --sandbox/--dangerously-bypass-approvals-and-sandbox flags. */
+export function executionPolicy(mode: ExecutionMode = "read-only") {
+  if (mode !== "read-only" && mode !== "danger-full-access") throw new Error("invalid_execution_mode");
+  return {
+    mode,
+    config: { ...RESTRICTED_CONFIG, sandbox_mode: mode },
+    sandboxPolicy: mode === "danger-full-access" ? { type: "dangerFullAccess" as const } : { type: "readOnly" as const, networkAccess: false },
+  };
+}
+
+export function sandboxMatches(mode: ExecutionMode, value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const policy = value as Record<string, unknown>;
+  return mode === "danger-full-access"
+    ? policy.type === "dangerFullAccess" && Object.keys(policy).every(key => key === "type")
+    : policy.type === "readOnly" && (policy.networkAccess === undefined || policy.networkAccess === false) &&
+      Object.keys(policy).every(key => key === "type" || key === "networkAccess");
+}
+
 function tomlLiteral(value: string | number | boolean | object): string {
   if (Array.isArray(value)) return "[]";
   if (typeof value === "object") return "{}";
   return JSON.stringify(value);
 }
 
-export function appServerArguments(selection: ModelSelection): string[] {
-  const settings = { ...RESTRICTED_CONFIG, model: selection.model, model_reasoning_effort: selection.effort };
+export function appServerArguments(selection: ModelSelection, executionMode: ExecutionMode = "read-only"): string[] {
+  const settings = { ...executionPolicy(executionMode).config, model: selection.model, model_reasoning_effort: selection.effort };
   return ["app-server", "--stdio", "--strict-config", ...Object.entries(settings).flatMap(([key, value]) => ["-c", `${key}=${tomlLiteral(value)}`])];
 }
 
 /** Reviewable dedicated-home config. Callers own creation, login and permissions. */
-export function dedicatedConfigText(): string {
+export function dedicatedConfigText(executionMode: ExecutionMode = "read-only"): string {
   return "# Dedicated task-checkpoint-record home; no credential copying.\n" +
-    Object.entries({ ...RESTRICTED_CONFIG, model: "gpt-6-sol", model_reasoning_effort: "medium" })
+    Object.entries({ ...executionPolicy(executionMode).config, model: "gpt-6-sol", model_reasoning_effort: "medium" })
       .map(([key, value]) => `${key} = ${tomlLiteral(value)}`).join("\n") + "\n";
 }

@@ -1,57 +1,51 @@
-name: Explicit official Codex compatibility probe
+name: Qualify the latest stable Codex full package without accounts
 on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  BUN_OPTIONS: ''
+  NODE_OPTIONS: ''
+  PYTHONPATH: ''
+  PYTHONHOME: ''
 jobs:
   protocol:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        release: [pinned, latest]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Select checksum-pinned release metadata
+      - name: Resolve official metadata and qualify an isolated full package
         env:
-          RELEASE_MODE: ${{ matrix.release }}
+          IMAGE_ARCH: ${{ matrix.arch }}
         run: |
-          if [ "$RELEASE_MODE" = latest ]; then
-            python3 container/resolve-latest.py --output "$RUNNER_TEMP/codex-lock.json"
-          else
-            cp container/versions.json "$RUNNER_TEMP/codex-lock.json"
-          fi
-      - name: Install isolated official full package
-        run: >-
-          python3 container/install-codex.py --lock "$RUNNER_TEMP/codex-lock.json"
-          --arch amd64 --prefix "$RUNNER_TEMP/codex-package"
-      - name: Probe unauthenticated CLI and app-server schema
-        env:
-          CODEX_HOME: ${{ runner.temp }}/codex-profile
-        run: |
-          mkdir -m 700 "$CODEX_HOME"
-          cp config/codex-service.toml "$CODEX_HOME/config.toml"
-          "$RUNNER_TEMP/codex-package/bin/codex" --version > "$RUNNER_TEMP/version.txt"
-          "$RUNNER_TEMP/codex-package/bin/codex" login --help > "$RUNNER_TEMP/login-help.txt"
-          "$RUNNER_TEMP/codex-package/bin/codex" app-server --help > "$RUNNER_TEMP/app-server-help.txt"
-          "$RUNNER_TEMP/codex-package/bin/codex" app-server generate-json-schema --experimental --out "$RUNNER_TEMP/protocol"
-          test -s "$RUNNER_TEMP/version.txt"
-      - name: Require reviewed version and adapter protocol surface
-        run: >-
-          python3 container/check-protocol.py --schema-dir "$RUNNER_TEMP/protocol"
-          --version-file "$RUNNER_TEMP/version.txt" > "$RUNNER_TEMP/protocol-check.json"
+          python3 -I -B container/resolve-latest.py --output "$RUNNER_TEMP/codex-lock.json"
+          python3 -I -B scripts/runtime/update.py qualify --root "$RUNNER_TEMP/codex-package" \
+            --lock "$RUNNER_TEMP/codex-lock.json" > "$RUNNER_TEMP/qualification-result.json"
+          python3 -I -B - "$RUNNER_TEMP/qualification-result.json" "$RUNNER_TEMP/qualification.json" <<'CHECK'
+          import json, os, pathlib, shutil, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert value['status'] in ('updated', 'current') and value['latestCheckSucceeded'] and value['selection']
+          assert json.loads(pathlib.Path(value['selection']['qualificationPath']).read_text())['platform'] == os.environ['IMAGE_ARCH']
+          shutil.copyfile(value['selection']['qualificationPath'], sys.argv[2])
+          CHECK
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
-          name: codex-${{ matrix.release }}-protocol-only
+          name: latest-codex-qualified-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/codex-lock.json
-            ${{ runner.temp }}/version.txt
-            ${{ runner.temp }}/login-help.txt
-            ${{ runner.temp }}/app-server-help.txt
-            ${{ runner.temp }}/protocol-check.json
-            ${{ runner.temp }}/protocol
-          retention-days: 14
-          if-no-files-found: error
+            ${{ runner.temp }}/qualification-result.json
+            ${{ runner.temp }}/qualification.json
+          retention-days: 30
+          if-no-files-found: warn

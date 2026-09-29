@@ -98,6 +98,20 @@
             }
           ]
         },
+        "qualification_receipt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "Literal absolute or config-directory-relative path; no tilde, dollar expansion or parent components."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Host-selected protocol/package qualification for an explicitly pinned native runtime; never accepted as a boolean compatibility assertion."
+        },
         "supervisor": {
           "type": "object",
           "additionalProperties": false,
@@ -159,6 +173,47 @@
       "additionalProperties": false,
       "description": "Policy ceilings for explicit native agent activation only; configuration never starts services or models.",
       "properties": {
+        "execution_mode": {
+          "enum": [
+            "read-only",
+            "danger-full-access"
+          ],
+          "default": "danger-full-access",
+          "description": "Explicit agent service native sandbox choice; the legacy text API remains read-only by default."
+        },
+        "runtime_update": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "latest-stable",
+                "pinned"
+              ],
+              "default": "latest-stable"
+            },
+            "root": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "description": "Literal absolute or config-directory-relative path; no tilde, dollar expansion or parent components."
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Null selects this recorder state's codex-runtime directory."
+            },
+            "check_interval_ms": {
+              "type": "integer",
+              "minimum": 60000,
+              "maximum": 86400000,
+              "default": 14400000
+            }
+          }
+        },
         "concurrency": {
           "type": "integer",
           "minimum": 1,

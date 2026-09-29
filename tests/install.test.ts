@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { BUN_CONFIG_RELATIVE, OWNER, ReceiptOperationError, absolute, applyPlan, artifactCommand, canonical, checkedJSON, fileHash, planBuiltArtifacts, prepareBundlePlan, preparePlan, readSafe, rollbackInstall, sha, shellQuote, verifyInstall, verifyManifest, verifyReleaseBundle, withReceipt, type Manifest, type ReleaseBundle } from "../scripts/install-cli.ts";
+import { BUN_CONFIG_RELATIVE, RUNTIME_SUPPORT_FILES, OWNER, ReceiptOperationError, absolute, applyPlan, artifactCommand, canonical, checkedJSON, fileHash, planBuiltArtifacts, prepareBundlePlan, preparePlan, readSafe, rollbackInstall, sha, shellQuote, verifyInstall, verifyManifest, verifyReleaseBundle, withReceipt, type Manifest, type ReleaseBundle } from "../scripts/install-cli.ts";
 import { createHookPlan } from "../scripts/hook-plan.ts";
 
 const roots: string[] = [];
@@ -34,7 +34,9 @@ function bundleFixture(realSources = false) {
   for (const [from, to, name, version] of [[recordSource, bundleRoot, "task-checkpoint-record", "0.1.0"], [helperSource, helper, "ultrafast-atif-helper", "0.2.0"]]) {
     if (realSources) {
       for (const path of ["package.json", "tsconfig.json", "LICENSE", "src", "bin"]) copyTree(join(from, path), join(to, path));
-      if (name === "task-checkpoint-record") { mkdirSync(join(to, "config"), { mode: 0o700 }); copyTree(join(from, BUN_CONFIG_RELATIVE), join(to, BUN_CONFIG_RELATIVE)); }
+      if (name === "task-checkpoint-record") { mkdirSync(join(to, "config"), { mode: 0o700 }); copyTree(join(from, BUN_CONFIG_RELATIVE), join(to, BUN_CONFIG_RELATIVE));
+        for (const path of RUNTIME_SUPPORT_FILES) { mkdirSync(dirname(join(to, path)), { recursive: true, mode: 0o700 }); copyTree(join(from, path), join(to, path)); }
+      }
     }
     else { writeFileSync(join(to, "LICENSE"), license, { mode: 0o644 }); writeFileSync(join(to, "package.json"), JSON.stringify({ name, version }), { mode: 0o644 }); }
   }
@@ -398,6 +400,11 @@ describe("owned immutable CLI installation", () => {
       const result = spawnSync(join(f.prefix, name), ["--help"], { encoding: "utf8", cwd: f.p, env: { PATH: "/usr/bin:/bin" } }); expect(result.status).toBe(0); expect(JSON.parse(result.stdout).commands).toBeDefined();
     }
     const installed = join(f.prefix, ".task-checkpoint-record/versions", plan.version_id);
+    expect(plan.manifest.runtimes.python).toBeDefined();
+    for (const path of RUNTIME_SUPPORT_FILES) expect(fileHash(join(installed, path))).toBe(fileHash(join(f.bundleRoot, path)));
+    const managed = join(f.p, "still-uncreated-managed-runtime");
+    const runtimeStatus = spawnSync(join(f.prefix, "task-checkpoint-record"), ["runtime", "status", "--root", managed], { encoding: "utf8", cwd: f.p, env: { PATH: "/usr/bin:/bin" }, timeout: 10000 });
+    expect(runtimeStatus.status).toBe(0); expect(JSON.parse(runtimeStatus.stdout).selection).toBe(null); expect(existsSync(managed)).toBe(false);
     expect(fileHash(join(installed, "licenses/ultrafast-atif-helper.LICENSE"))).toBe(f.release.helper.license.sha256);
     expect(fileHash(join(installed, "release-bundle.json"))).toBe(f.digest);
   }, 60000);

@@ -34,6 +34,8 @@ jobs:
       - run: python3 scripts/distribution/test_bundle.py
       - run: python3 scripts/distribution/test_client_plugins.py
       - run: python3 container/test-protocol.py
+      - run: python3 -I -B scripts/runtime/test_update.py
+      - run: python3 -I -B container/test-image-ci.py
       - run: python3 scripts/distribution/package.py check
       - name: Build allowlisted public artifacts
         run: python3 scripts/distribution/package.py archive --output "$RUNNER_TEMP/public-artifacts"

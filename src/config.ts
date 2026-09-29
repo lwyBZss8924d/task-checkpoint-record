@@ -8,6 +8,8 @@ const CONFIG_MAX_BYTES = 65536;
 export type DecisionProvider = "openrouter" | "typesafe";
 export type ConfigModel = { model: "gpt-6-sol" | "gpt-6-luna"; effort: "medium" | "high" };
 export type AgentServiceConfig = {
+  execution_mode: "read-only" | "danger-full-access";
+  runtime_update: { mode: "latest-stable" | "pinned"; root: string | null; check_interval_ms: number };
   concurrency: number; max_workers: number; max_native_turns: number; max_tool_calls: number;
   deadline_ms: number; max_rounds: number; data_policy: "metadata_only" | "prepared_fragments";
   external_score_max_calls: number;
@@ -16,7 +18,7 @@ export type PortableConfig = {
   schema_version: typeof CONFIG_VERSION;
   recorder: { state_dir: string; helper_command: string[]; concurrency: number; max_jobs: number;
     timeout_ms: number; lease_ms: number; page_bytes: number; page_limit: number; stdout_bytes: number };
-  codex: { executable: string | null; home: string | null; supervisor: ConfigModel; semantic_worker: ConfigModel; eval: ConfigModel };
+  codex: { executable: string | null; home: string | null; qualification_receipt: string | null; supervisor: ConfigModel; semantic_worker: ConfigModel; eval: ConfigModel };
   scoring: { provider: DecisionProvider; model: string; api_key_env: string;
     limits: { deadline_ms: number; max_request_bytes: number; max_response_bytes: number } };
   agent_service: AgentServiceConfig;
@@ -70,12 +72,13 @@ export function configTemplate(provider: DecisionProvider = "openrouter"): Porta
     recorder: { state_dir: "./.local/task-checkpoint-record", helper_command: ["ultrafast-atif-helper"],
       concurrency: 2, max_jobs: 64, timeout_ms: 10000, lease_ms: 30000,
       page_bytes: 1048576, page_limit: 100, stdout_bytes: 2097152 },
-    codex: { executable: null, home: null, supervisor: { model: "gpt-6-sol", effort: "medium" },
+    codex: { executable: null, home: null, qualification_receipt: null, supervisor: { model: "gpt-6-sol", effort: "medium" },
       semantic_worker: { model: "gpt-6-luna", effort: "medium" }, eval: { model: "gpt-6-luna", effort: "high" } },
     scoring: { provider, model: provider === "openrouter" ? "typesafe/jev-1.13-20260917" : "jev-1.13.0",
       api_key_env: provider === "openrouter" ? "OPENROUTER_API_KEY" : "TYPESAFE_API_KEY",
       limits: { deadline_ms: 20000, max_request_bytes: 65536, max_response_bytes: 1048576 } },
-    agent_service: { concurrency: 2, max_workers: 2, max_native_turns: 3, max_tool_calls: 64,
+    agent_service: { execution_mode: "danger-full-access", runtime_update: { mode: "latest-stable", root: null, check_interval_ms: 14400000 },
+      concurrency: 2, max_workers: 2, max_native_turns: 3, max_tool_calls: 64,
       deadline_ms: 180000, max_rounds: 2, data_policy: "metadata_only", external_score_max_calls: 0 },
   };
 }
@@ -91,6 +94,11 @@ export function parseConfig(value: unknown, baseDir: string): PortableConfig {
   const r = root.recorder === undefined ? {} : object(root.recorder, Object.keys(defaults.recorder));
   const c = root.codex === undefined ? {} : object(root.codex, Object.keys(defaults.codex));
   const agent = root.agent_service === undefined ? {} : object(root.agent_service, Object.keys(defaults.agent_service));
+  const executionMode = agent.execution_mode === undefined ? defaults.agent_service.execution_mode : agent.execution_mode;
+  if (executionMode !== "read-only" && executionMode !== "danger-full-access") fail("config_unsupported_execution_mode");
+  const update = agent.runtime_update === undefined ? {} : object(agent.runtime_update, ["mode", "root", "check_interval_ms"]);
+  const updateMode = update.mode === undefined ? "latest-stable" : update.mode;
+  if (updateMode !== "latest-stable" && updateMode !== "pinned") fail("config_unsupported_runtime_update_mode");
   const dataPolicy = agent.data_policy === undefined ? "metadata_only" : agent.data_policy;
   if (dataPolicy !== "metadata_only" && dataPolicy !== "prepared_fragments") fail("config_unsupported_agent_data_policy");
   const limits = s.limits === undefined ? {} : object(s.limits, Object.keys(defaults.scoring.limits));
@@ -112,13 +120,17 @@ export function parseConfig(value: unknown, baseDir: string): PortableConfig {
     },
     codex: { executable: c.executable === undefined || c.executable === null ? null : filePath(c.executable, baseDir),
       home: c.home === undefined || c.home === null ? null : filePath(c.home, baseDir),
+      qualification_receipt: c.qualification_receipt === undefined || c.qualification_receipt === null ? null : filePath(c.qualification_receipt, baseDir),
       supervisor: model(c.supervisor, defaults.codex.supervisor),
       semantic_worker: model(c.semantic_worker, defaults.codex.semantic_worker), eval: model(c.eval, defaults.codex.eval) },
     scoring: { provider, model: defaults.scoring.model, api_key_env: apiKeyEnv,
       limits: { deadline_ms: integer(limits.deadline_ms, 20000, 1, 20000),
         max_request_bytes: integer(limits.max_request_bytes, 65536, 1, 65536),
         max_response_bytes: integer(limits.max_response_bytes, 1048576, 1, 1048576) } },
-    agent_service: { concurrency: integer(agent.concurrency, 2, 1, 32), max_workers: integer(agent.max_workers, 2, 1, 32),
+    agent_service: { execution_mode: executionMode,
+      runtime_update: { mode: updateMode, root: update.root === undefined || update.root === null ? null : filePath(update.root, baseDir),
+        check_interval_ms: integer(update.check_interval_ms, 14400000, 60000, 86400000) },
+      concurrency: integer(agent.concurrency, 2, 1, 32), max_workers: integer(agent.max_workers, 2, 1, 32),
       max_native_turns: integer(agent.max_native_turns, 3, 2, 33), max_tool_calls: integer(agent.max_tool_calls, 64, 1, 256),
       deadline_ms: integer(agent.deadline_ms, 180000, 1000, 300000), max_rounds: integer(agent.max_rounds, 2, 1, 32),
       data_policy: dataPolicy, external_score_max_calls: integer(agent.external_score_max_calls, 0, 0, 1) },
@@ -220,8 +232,14 @@ export function configSchema(): object {
         page_bytes: integer(1024, 4194304), page_limit: integer(1, 1000), stdout_bytes: integer(1024, 8388608) } },
       codex: { type: "object", additionalProperties: false, properties: {
         executable: { anyOf: [path, { type: "null" }] }, home: { anyOf: [path, { type: "null" }] },
+        qualification_receipt: { anyOf: [path, { type: "null" }], description: "Host-selected protocol/package qualification for an explicitly pinned native runtime; never accepted as a boolean compatibility assertion." },
         supervisor: model, semantic_worker: model, eval: model } },
       agent_service: { type: "object", additionalProperties: false, description: "Policy ceilings for explicit native agent activation only; configuration never starts services or models.", properties: {
+        execution_mode: { enum: ["read-only", "danger-full-access"], default: "danger-full-access", description: "Explicit agent service native sandbox choice; the legacy text API remains read-only by default." },
+        runtime_update: { type: "object", additionalProperties: false, properties: {
+          mode: { enum: ["latest-stable", "pinned"], default: "latest-stable" },
+          root: { anyOf: [path, { type: "null" }], description: "Null selects this recorder state's codex-runtime directory." },
+          check_interval_ms: { ...integer(60000, 86400000), default: 14400000 } } },
         concurrency: integer(1, 32), max_workers: integer(1, 32),
         max_native_turns: { ...integer(2, 33), description: "Admitted native turn/start operations per round, including one supervisor turn and at most max_workers worker turns. Native internal HTTP retries and tool-followup model requests are not separately observable or hard-limited by this counter." },
         max_tool_calls: integer(1, 256), deadline_ms: integer(1000, 300000), max_rounds: integer(1, 32),

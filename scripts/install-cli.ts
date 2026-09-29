@@ -1,11 +1,12 @@
 /** Source-owned installation; no effects on import and no package-manager calls. */
 import { createHash, randomUUID } from "node:crypto";
-import { constants, closeSync, fchmodSync, fstatSync, fsyncSync, ftruncateSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
+import { constants, closeSync, fchmodSync, fstatSync, fsyncSync, ftruncateSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
 export const OWNER = "task-checkpoint-record.cli.v1";
 export const BUN_CONFIG_RELATIVE = "config/runtime.bunfig.toml";
+export const RUNTIME_SUPPORT_FILES = ["scripts/runtime/update.py", "container/resolve-latest.py", "container/install-codex.py", "container/check-protocol.py", "container/app-server-surface.json"] as const;
 const COMMANDS = ["task-checkpoint-record", "ultrafast-atif-helper"] as const;
 const CAP = 8 * 1024 * 1024;
 export class InstallError extends Error { constructor(readonly code: string) { super(code); } }
@@ -158,7 +159,7 @@ type Runtime = { path: string; sha256: string; version: string };
 export type Manifest = {
   schema_version: "task-checkpoint-record.install-manifest.v1"; owner: string;
   sources: { name: string; root: string; version: string; files: FileEntry[] }[];
-  runtimes: { bun: Runtime; node: Runtime }; files: FileEntry[];
+  runtimes: { bun: Runtime; node: Runtime; python?: Runtime }; files: FileEntry[];
   /** Absent only on legacy manifests retained for inspection and rollback. */
   bun_config_path?: typeof BUN_CONFIG_RELATIVE;
   help_checks: { name: string; stdout_sha256: string; exit_code: 0 }[];
@@ -250,6 +251,7 @@ function source(root: string, name: string) {
   ownedDirectory(root); const pkg = json(join(root, "package.json")); if (pkg.name !== name) fail("source_package_mismatch");
   const files = ["package.json", "tsconfig.json", ...(name === "task-checkpoint-record" ? ["bin/task-checkpoint-record", BUN_CONFIG_RELATIVE] : ["bin/ultrafast-atif-helper.mjs"])].map(path => ({ path, sha256: fileHash(join(root, path)), mode: lstatSync(join(root, path)).mode & 0o777 }));
   files.push(...fileList(join(root, "src")).map(f => ({ ...f, path: `src/${f.path}` })));
+  if (name === "task-checkpoint-record" && stat(join(root, "src/runtime-update.ts"))) for (const path of RUNTIME_SUPPORT_FILES) files.push({ path, sha256: fileHash(join(root, path)), mode: lstatSync(join(root, path)).mode & 0o777 });
   for (const path of ["bun.lock", "package-lock.json"]) if (stat(join(root, path))) files.push({ path, sha256: fileHash(join(root, path)), mode: lstatSync(join(root, path)).mode & 0o777 });
   return { name, root, version: string(pkg.version), files: files.sort((a, b) => a.path.localeCompare(b.path)) };
 }
@@ -295,7 +297,7 @@ function validateManifest(m: any): asserts m is Manifest {
     seen.add(f.path); if (!/^[a-f0-9]{64}$/.test(f.sha256) || ![0o600, 0o644, 0o700, 0o755].includes(f.mode)) fail("invalid_artifact_metadata");
   }
   if (m.bun_config_path !== undefined && (m.bun_config_path !== BUN_CONFIG_RELATIVE || !seen.has(BUN_CONFIG_RELATIVE))) fail("invalid_bun_runtime_config");
-  for (const name of ["bun", "node"] as const) { const r = m.runtimes?.[name]; absolute(r?.path); if (!/^[a-f0-9]{64}$/.test(r.sha256)) fail("invalid_runtime"); }
+  for (const name of ["bun", "node", ...(m.runtimes?.python ? ["python"] : [])] as const) { const r = m.runtimes?.[name]; absolute(r?.path); if (!/^[a-f0-9]{64}$/.test(r.sha256)) fail("invalid_runtime"); }
 }
 export function verifyManifest(manifestPath: string): Manifest {
   const m = json(manifestPath); validateManifest(m); const dir = dirname(manifestPath);
@@ -310,7 +312,7 @@ export function verifyManifest(manifestPath: string): Manifest {
       if (d.installed_licenses[key] !== path || fileHash(join(dir, path)) !== d.release[key].license.sha256) fail("installed_release_license_changed");
     }
   }
-  for (const name of ["bun", "node"] as const) if (fileHash(m.runtimes[name].path) !== m.runtimes[name].sha256) fail("runtime_changed");
+  for (const r of [m.runtimes.bun, m.runtimes.node, ...(m.runtimes.python ? [m.runtimes.python] : [])]) if (fileHash(r.path) !== r.sha256) fail("runtime_changed");
   return m;
 }
 function before(prefix: string): InstallPlan["before"] {
@@ -339,24 +341,35 @@ export function planBuiltArtifacts(stage: string, prefix: string, manifest: Mani
   const preconditions = before(prefix); writeNew(join(stage, "manifest.json"), canonical(manifest) + "\n");
   return { schema_version: "task-checkpoint-record.install-plan.v1", owner: OWNER, plan_only: true, stage, prefix, version_id: sha(canonical(manifest)), manifest, before: preconditions };
 }
-type BuildOptions = { recordRepo: string; helperRepo: string; prefix: string; stage: string; bun: string; node: string };
+type BuildOptions = { recordRepo: string; helperRepo: string; prefix: string; stage: string; bun: string; node: string; python?: string };
 export function preparePlan(o: BuildOptions): InstallPlan { return prepareSources(o); }
-export function prepareBundlePlan(o: { bundleRoot: string; bundleSha256: string; prefix: string; stage: string; bun: string; node: string }): InstallPlan {
+export function prepareBundlePlan(o: { bundleRoot: string; bundleSha256: string; prefix: string; stage: string; bun: string; node: string; python?: string }): InstallPlan {
   absolute(o.bundleRoot);
   // A stage below the unpacked release would mutate the very inventory we pin.
   const rel = relative(o.bundleRoot, absolute(o.stage)); if (!rel || (!rel.startsWith(".." + sep) && rel !== ".." && !isAbsolute(rel))) fail("stage_inside_release_bundle");
   const release = verifyReleaseBundle(o.bundleRoot, o.bundleSha256);
-  return prepareSources({ recordRepo: o.bundleRoot, helperRepo: join(o.bundleRoot, release.helper.root), prefix: o.prefix, stage: o.stage, bun: o.bun, node: o.node },
+  return prepareSources({ recordRepo: o.bundleRoot, helperRepo: join(o.bundleRoot, release.helper.root), prefix: o.prefix, stage: o.stage, bun: o.bun, node: o.node, ...(o.python ? { python: o.python } : {}) },
     { manifest_sha256: o.bundleSha256, release, installed_licenses: { recorder: "licenses/task-checkpoint-record.LICENSE", helper: "licenses/ultrafast-atif-helper.LICENSE" } });
 }
 function prepareSources(o: BuildOptions, distribution?: Manifest["distribution"]): InstallPlan {
-  for (const p of Object.values(o)) absolute(p); before(o.prefix); safePath(o.stage, true);
+  for (const p of Object.values(o)) if (p !== undefined) absolute(p); before(o.prefix); safePath(o.stage, true);
   if (stat(o.stage)) fail("stage_must_be_new"); ownedDirectory(dirname(o.stage));
   const sources = [source(o.recordRepo, COMMANDS[0]), source(o.helperRepo, COMMANDS[1])];
-  const runtimes = { bun: runtime(o.bun, join(o.recordRepo, BUN_CONFIG_RELATIVE)), node: runtime(o.node) };
+  const support = !!stat(join(o.recordRepo, "src/runtime-update.ts"));
+  const runtimes: Manifest["runtimes"] = { bun: runtime(o.bun, join(o.recordRepo, BUN_CONFIG_RELATIVE)), node: runtime(o.node) };
+  if (support) {
+    const selectedPython = o.python ?? Bun.which("python3") ?? fail("python_3_9_required");
+    runtimes.python = runtime(realpathSync(selectedPython));
+    const version = /^Python (\d+)\.(\d+)\./.exec(runtimes.python.version);
+    if (!version || Number(version[1]) !== 3 || Number(version[2]) < 9) fail("python_3_9_required");
+  }
   mkdirSync(o.stage, { mode: 0o700 });
   for (const path of ["config", "record", "helper", "helper/bin", "helper/dist", "helper/dist/helper"]) mkdirSync(join(o.stage, path), { mode: 0o700 });
   writeNew(join(o.stage, BUN_CONFIG_RELATIVE), readSafe(join(o.recordRepo, BUN_CONFIG_RELATIVE)), 0o644);
+  if (support) {
+    for (const path of RUNTIME_SUPPORT_FILES) { mkdirSync(dirname(join(o.stage, path)), { recursive: true, mode: 0o700 }); writeNew(join(o.stage, path), readSafe(join(o.recordRepo, path)), 0o644); }
+    writeNew(join(o.stage, "config/runtime-python.json"), canonical(runtimes.python) + "\n", 0o644);
+  }
   run(o.bun, [...bunFlags(join(o.stage, BUN_CONFIG_RELATIVE)), "build", join(o.recordRepo, "src/cli.ts"), "--target=bun", "--outfile", join(o.stage, "record/cli.mjs")], o.stage);
   run(o.bun, [...bunFlags(join(o.stage, BUN_CONFIG_RELATIVE)), "build", join(o.helperRepo, "src/helper/cli.ts"), "--target=node", "--outfile", join(o.stage, "helper/dist/helper/cli.js")], o.stage);
   writeNew(join(o.stage, "helper/bin/ultrafast-atif-helper.mjs"), readSafe(join(o.helperRepo, "bin/ultrafast-atif-helper.mjs")), 0o644);
@@ -482,10 +495,10 @@ export function flags(argv: string[], allowed: string[]): { command: string; val
 function emit(value: unknown) { process.stdout.write(JSON.stringify(value) + "\n"); }
 if (import.meta.main) {
   try {
-    const { command, values: v } = flags(process.argv.slice(2), ["record-repo", "helper-repo", "bundle-root", "bundle-sha256", "prefix", "stage", "bun", "node", "output", "plan", "receipt", "sha256"]);
+    const { command, values: v } = flags(process.argv.slice(2), ["record-repo", "helper-repo", "bundle-root", "bundle-sha256", "prefix", "stage", "bun", "node", "python", "output", "plan", "receipt", "sha256"]);
     if (["help", "--help"].includes(command)) emit({ schema_version: "task-checkpoint-record.installer-help.v1", commands: {
-      plan: "--record-repo ABS --helper-repo ABS --prefix EXISTING_BIN_DIR --stage NEW_ABS_DIR --bun REAL_EXEC --node REAL_EXEC --output NEW_PLAN_JSON",
-      "bundle-plan": "--bundle-root UNPACKED_RELEASE --bundle-sha256 REVIEWED_RELEASE_MANIFEST_SHA --prefix EXISTING_BIN_DIR --stage NEW_ABS_DIR --bun REAL_EXEC --node REAL_EXEC --output NEW_PLAN_JSON",
+      plan: "--record-repo ABS --helper-repo ABS --prefix EXISTING_BIN_DIR --stage NEW_ABS_DIR --bun REAL_EXEC --node REAL_EXEC [--python REAL_PYTHON3] --output NEW_PLAN_JSON",
+      "bundle-plan": "--bundle-root UNPACKED_RELEASE --bundle-sha256 REVIEWED_RELEASE_MANIFEST_SHA --prefix EXISTING_BIN_DIR --stage NEW_ABS_DIR --bun REAL_EXEC --node REAL_EXEC [--python REAL_PYTHON3] --output NEW_PLAN_JSON",
       apply: "--plan ABS_JSON --sha256 REVIEWED_PLAN_SHA --output NEW_RECEIPT_JSON",
       verify: "--prefix EXISTING_BIN_DIR",
       rollback: "--receipt ABS_JSON --sha256 REVIEWED_RECEIPT_SHA --output NEW_ROLLBACK_JSON"
@@ -493,7 +506,7 @@ if (import.meta.main) {
     else if (command === "plan" || command === "bundle-plan") {
       if (command === "bundle-plan" && (v["record-repo"] || v["helper-repo"])) fail("bundle_external_source_forbidden");
       if (command === "plan" && (v["bundle-root"] || v["bundle-sha256"])) fail("ambiguous_source_mode");
-      const p = command === "bundle-plan" ? prepareBundlePlan({ bundleRoot: v["bundle-root"], bundleSha256: v["bundle-sha256"], prefix: v.prefix, stage: v.stage, bun: v.bun, node: v.node }) : preparePlan({ recordRepo: v["record-repo"], helperRepo: v["helper-repo"], prefix: v.prefix, stage: v.stage, bun: v.bun, node: v.node });
+      const p = command === "bundle-plan" ? prepareBundlePlan({ bundleRoot: v["bundle-root"], bundleSha256: v["bundle-sha256"], prefix: v.prefix, stage: v.stage, bun: v.bun, node: v.node, python: v.python }) : preparePlan({ recordRepo: v["record-repo"], helperRepo: v["helper-repo"], prefix: v.prefix, stage: v.stage, bun: v.bun, node: v.node, python: v.python });
       const body = JSON.stringify(p, null, 2) + "\n"; writeNew(absolute(v.output), body); emit({ plan: v.output, sha256: sha(body), version_id: p.version_id, plan_only: true });
     }
     else if (command === "verify") emit(verifyInstall(absolute(v.prefix)));

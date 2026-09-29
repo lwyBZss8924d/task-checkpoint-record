@@ -100,6 +100,43 @@ test("unified daemon drains only activated binding ETL and reuses one native sup
   appendFileSync(s.source,'{"type":"message","entry_id":"budget-stop"}\n');s.base.enqueue(s.binding,{hook_event_name:"Stop",native_session_id:"master-session",native_turn_id:"master-turn",transcript_path:s.source,input_sha256:sha("hook-3"),delivery_id:null});
   expect((await d.once()).state).toBe("idle");expect(fake.status().workers).toBe(4);expect((s.store.status() as any).wakes.some((r:any)=>r.state==="budget_exhausted")).toBe(true);
 });
+test("runtime maintenance waits for startup acknowledgement and never runs during an active fanout",async()=>{
+  const s=setup({},true);s.activate();const f=fakeRuntime({holdWorkers:true});let checks=0;
+  f.factory.beforeCycle=async()=>{checks++;return{ready:true};};const {d}=daemon(s,f);
+  const before=new AbortController();await d.run(before.signal,{beforeFirstWork:async()=>{expect(checks).toBe(0);before.abort();}});
+  expect(checks).toBe(0);expect(f.status().supervisors).toBe(0);
+  const second=new SupervisorDaemon({store:s.store,daemon_id:"daemon",runtimeFactory:f.factory,ptcFactory:fakePtc});daemons.push(second);
+  const active=new AbortController(),pending=second.once(active.signal);
+  for(let i=0;i<100&&f.status().active===0;i++)await Bun.sleep(5);
+  expect(f.status().active).toBeGreaterThan(0);expect(checks).toBe(1);
+  await expect(second.once()).rejects.toThrow("agent_daemon_busy");expect(checks).toBe(1);
+  active.abort();await pending;expect(checks).toBe(1);
+});
+test("idle runtime rotation links epochs and preserves consumed activation budgets",async()=>{
+  const s=setup({},true);s.activate();const f=fakeRuntime();let replace=false,checks=0;
+  f.factory.beforeCycle=async({rotateSessions})=>{checks++;if(replace){expect(f.status().active).toBe(0);await rotateSessions(["activation"]);replace=false;}return{ready:true};};
+  const {d}=daemon(s,f);expect((await d.once()).state).toBe("succeeded");const first=(s.base.db.query("SELECT epoch_id FROM agent_sessions").get() as any).epoch_id;
+  const before=(s.store.status() as any).activations[0];expect(before.rounds_reserved).toBe(1);expect(before.native_calls).toBe(3);
+  appendFileSync(s.source,'{"type":"message","entry_id":"next-runtime-window"}\n');s.base.enqueue(s.binding,{hook_event_name:"PreCompact",native_session_id:"master-session",native_turn_id:"master-turn-2",transcript_path:s.source,input_sha256:sha("runtime-cycle-two"),delivery_id:null});
+  replace=true;expect((await d.once()).state).toBe("succeeded");expect(checks).toBe(2);expect(f.status()).toMatchObject({supervisors:2,workers:4,closed:1});
+  const epochs=s.base.db.query("SELECT epoch_id,previous_epoch_id,closed_at FROM agent_sessions ORDER BY rowid").all() as any[];
+  expect(epochs).toHaveLength(2);expect(epochs[0].closed_at).not.toBeNull();expect(epochs[1].previous_epoch_id).toBe(first);
+  const after=(s.store.status() as any).activations[0];expect(after.rounds_reserved).toBe(2);expect(after.native_calls).toBe(6);
+});
+test("runtime rotation with unknown closure retains capacity and does not consume the next round",async()=>{
+  const s=setup({},true);s.activate();const f=fakeRuntime(),original=f.factory.createSupervisor;let rotate=false;
+  f.factory.createSupervisor=async(...args)=>{const session=await original(...args);return{...session,close:async()=>{throw new TcrError("owned_group_unverified");}};};
+  f.factory.beforeCycle=async({rotateSessions})=>{if(rotate)await rotateSessions(["activation"]);return{ready:true};};
+  const {d}=daemon(s,f);expect((await d.once()).state).toBe("succeeded");rotate=true;
+  await expect(d.once()).rejects.toThrow("owned_group_unverified");expect(f.status().supervisors).toBe(1);
+  const epoch=s.base.db.query("SELECT close_error,closed_at FROM agent_sessions").get() as any;
+  expect(epoch.close_error).toBe("owned_group_unverified");expect(epoch.closed_at).toBeNull();expect((s.store.status() as any).activations[0].native_calls).toBe(3);
+});
+test("unavailable qualified runtime leaves extraction and model admission unconsumed",async()=>{
+  const s=setup({},true);s.activate();const f=fakeRuntime();f.factory.beforeCycle=async()=>({ready:false});const {d}=daemon(s,f);
+  expect(await d.once()).toEqual({state:"runtime_unavailable",model_started:false,extracted:0});expect(f.status().supervisors).toBe(0);
+  expect((s.base.status().jobs as any[])[0].state).toBe("queued");expect((s.store.status() as any).activations[0].rounds_reserved).toBe(0);
+});
 test("configured 32-worker fanout stays bounded and compact reply permits reduction",async()=>{
   const s=setup({max_workers:32,worker_concurrency:32,native_call_budget:33,max_rounds:1});s.activate();const{d,fake}=daemon(s,fakeRuntime({workers:32}));expect((await d.once()).state).toBe("succeeded");
   expect(fake.status().workers).toBe(32);expect(fake.status().peak).toBe(32);expect((s.store.status() as any).activations[0].native_calls).toBe(33);

@@ -13,6 +13,9 @@
 !config/runtime.bunfig.toml
 !container/
 !container/**
+!scripts/
+!scripts/runtime/
+!scripts/runtime/**
 **/.env
 **/.env.*
 **/auth.json

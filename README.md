@@ -21,6 +21,8 @@ an independent [source repository](https://github.com/lwyBZss8924d/ultrafast-ati
   tools to bounded workers, reduces their cited reports and records proposals.
 - A dedicated persistent ChatGPT login, immutable model/budget policies and
   separate host-only Jev scoring for admitted synthetic or redacted packets.
+- Automatic discovery and qualification of the latest stable Codex package for
+  the dedicated daemon, with versioned installs and recorded update failures.
 - Self-contained Skills, Codex and Claude plugins with native Hooks, Claude slash
   commands, source/release checks and containers.
 
@@ -91,6 +93,13 @@ checks an existing login. Existing profiles are preserved. See the
 wrappers and the configured App Server API. Container users retain separate
 account and record-state volumes.
 
+The activated daemon's execution mode is explicitly configured. Its unattended
+default uses `approval_policy = "never"` and `sandbox_mode = "danger-full-access"`
+through native configuration and matching thread/turn parameters. The standalone
+prepared-input library retains its read-only default. App-server does not accept
+the TUI's bypass flag directly. The helper tool scope, credential separation and
+content admissions still apply independently of the native sandbox setting.
+
 ## Record and recall
 
 Initialize an explicitly selected private state directory with `init --state
@@ -138,6 +147,14 @@ valid report must cite recorded tool evidence. Proposals and their graph remain
 intermediate; the task owner seals its formal checkpoint. The default native
 content policy is metadata only. See the [agent service guide](docs/agent-service.md)
 for recovery, lifecycle and evidence limits.
+
+Latest-stable runtime management checks the official release, verifies the full
+paired package and required protocol surface, and records the selected version
+and executable digest. A running turn/fan-out keeps one selection. An update is
+adopted at a safe idle boundary after the old owned session closes; failure retains
+the last verified selection and reports that it could not adopt the latest.
+See [runtime updates](docs/runtime-updates.md) for the CLI, update policy, image
+automation and rollback. Authentication and host Codex installations stay separate.
 
 Start from [llms.txt](llms.txt) and the
 [record/recall Skill](skills/task-checkpoint-record/SKILL.md). The Skill can be

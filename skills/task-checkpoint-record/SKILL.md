@@ -88,6 +88,19 @@ gpt-6-luna/medium; explicit evals use gpt-6-luna/high for both. Model/effort and
 account do not silently fall back. See the bundled
 [agent service guide](references/docs/agent-service.md) for actual commands.
 
+Inspect the dedicated runtime's selected version, qualification and update state
+before diagnosing a model failure. The daemon follows official latest-stable
+Codex through complete verified packages and safe idle switching. A failed update
+must remain visible; a retained old version is not proof that the latest is active.
+Use the bundled [runtime update guide](references/docs/runtime-updates.md) for the
+exact status/plan/update interface and rollback. Never update the master client's
+binary or copy its login as part of this service operation.
+
+The activated daemon's unattended mode uses native approval `never` and sandbox
+`danger-full-access`; check the observed native policy receipt. This does not
+broaden the host PTC tool allowlist or admit real RAW/provider payloads. Keep an
+in-flight turn and fan-out on one qualified binary selection.
+
 ## Configure a standalone or combined installation
 
 Use one explicit `task-checkpoint.config.v1` JSON file for the recorder and helper.

@@ -5,7 +5,8 @@ import { createAgentSession, runAgentTurn, type AgentSessionOptions } from "./ag
 import { materializeAgentActivation, selectAgentScoringCredential, type AgentScoringCredential } from "./agent-config.ts";
 import { bunRuntimeFlags } from "./bun-runtime.ts";
 import { parseConfig, type PortableConfig } from "./config.ts";
-import { configuredAppServerOptions } from "./config-runtime.ts";
+import { configuredAppServerOptions, validateConfiguredAgentPaths } from "./config-runtime.ts";
+import { ensureLatestCodexRuntime, runtimeSelectionRevision } from "./runtime-update.ts";
 import { createCliPtcHelper, createCliPtcScorer, createPtcTools, validatePreparedPacketAdmission } from "./ptc-tools.ts";
 import type { Store } from "./store.ts";
 import { SupervisorDaemon, type SupervisorPtcFactory, type SupervisorRuntimeFactory } from "./supervisor.ts";
@@ -65,7 +66,7 @@ function activationConfig(activation: SupervisorActivation, state: string): Port
   if (canonical(config) !== canonical(activation.runtime_config) || sha(canonical(config)) !== activation.policy.config_sha256 ||
       config.recorder.state_dir !== state) fail("agent_runtime_config_mismatch");
   for (const packet of activation.policy.content.prepared_packets) validatePreparedPacketAdmission(packet, config.scoring);
-  configuredAppServerOptions(config, "supervisor", state);
+  validateConfiguredAgentPaths(config);
   return config;
 }
 
@@ -88,9 +89,15 @@ export function preflightAgentDaemon(store: SupervisorStore, daemonId: string, e
 }
 
 /** Native children receive their adapter's allowlisted environment, never this host-only credential. */
-export function createConfiguredAgentDaemon(store: SupervisorStore, daemonId: string, environment: NodeJS.ProcessEnv): SupervisorDaemon {
+export function createConfiguredAgentDaemon(store: SupervisorStore, daemonId: string, environment: NodeJS.ProcessEnv,
+  dependencies: { ensureRuntime?: typeof ensureLatestCodexRuntime } = {}): SupervisorDaemon {
   const admitted = preflightAgentDaemon(store, daemonId, environment);
   const known = new Map(admitted.activations.map(activation => [activation.activation_id, activation.policy_sha256]));
+  type RuntimeSelection = NonNullable<Awaited<ReturnType<typeof ensureLatestCodexRuntime>>["selection"]>;
+  const selections = new Map<string, RuntimeSelection>();
+  const checks = new Map<string, number>();
+  const revisions = new Map<string, string | null>();
+  const ensureRuntime = dependencies.ensureRuntime ?? ensureLatestCodexRuntime;
   const contexts = new Map<string, { config: PortableConfig; workDir: string; scorer?: ReturnType<typeof createCliPtcScorer> }>();
   const context = (activation: SupervisorActivation) => {
     if (known.get(activation.activation_id) !== activation.policy_sha256) fail("agent_activation_requires_service_restart");
@@ -109,7 +116,12 @@ export function createConfiguredAgentDaemon(store: SupervisorStore, daemonId: st
   };
   const runtimeOptions = (activation: SupervisorActivation, role: "supervisor" | "semantic-worker"): Omit<AgentSessionOptions, "tools"> => {
     const current = context(activation), policy = activation.policy;
-    return { ...configuredAppServerOptions(current.config, role, current.workDir),
+    const selected = selections.get(activation.activation_id);
+    if (current.config.agent_service.runtime_update.mode === "latest-stable" && !selected) fail("agent_runtime_not_selected");
+    const config = selected ? { ...current.config, codex: { ...current.config.codex, executable: selected.executable } } : current.config;
+    return { ...configuredAppServerOptions(config, role, current.workDir),
+      executionMode: current.config.agent_service.execution_mode,
+      ...(selected ? { qualificationPath: selected.qualificationPath } : {}),
       selection: { ...(role === "supervisor" ? policy.supervisor : policy.worker) },
       allowedDataClasses: policy.content.native_content === "metadata" ? ["metadata_only"] : ["metadata_only", "synthetic", "redacted"],
       limits: { deadlineMs: policy.round_timeout_ms, maxTurns: policy.max_rounds,
@@ -118,6 +130,43 @@ export function createConfiguredAgentDaemon(store: SupervisorStore, daemonId: st
         maxConcurrentTools: policy.worker_concurrency, maxInputBytes: 131072, maxOutputBytes: 65536 } };
   };
   const runtimeFactory: SupervisorRuntimeFactory = {
+    beforeCycle: async ({ signal, rotateSessions }) => {
+      const groups = new Map<string, { activations: SupervisorActivation[]; interval: number; executable: string | null }>();
+      for (const activation of store.activations(daemonId)) {
+        const config = context(activation).config, update = config.agent_service.runtime_update;
+        if (update.mode === "pinned") continue;
+        const root = update.root ?? join(store.base.state, "codex-runtime"), group = groups.get(root);
+        if (group) { group.activations.push(activation); group.interval = Math.min(group.interval, update.check_interval_ms); }
+        else groups.set(root, { activations: [activation], interval: update.check_interval_ms, executable: config.codex.executable });
+      }
+      for (const [root, group] of groups) {
+        if (signal.aborted) return { ready: false };
+        const prior = checks.get(root);
+        const revision = runtimeSelectionRevision(root);
+        if (prior !== undefined && revision === revisions.get(root) && Date.now() - prior < group.interval) continue;
+        // This point is serialized between rounds. No worker factory runs the updater.
+        const result = await ensureRuntime({ root, currentExecutable: group.executable, busy: false,
+          force: prior === undefined, checkIntervalMs: group.interval, signal });
+        checks.set(root, Date.now());
+        // Bind this result to the revision observed before awaiting it. A concurrent
+        // hold/promotion must invalidate the next cycle rather than be cached as processed.
+        revisions.set(root, revision);
+        const activationIds = group.activations.map(a => a.activation_id);
+        const observation = { root, activation_ids: activationIds, status: result.status,
+          checked_at: result.checkedAt, latest_check_succeeded: result.latestCheckSucceeded,
+          stale: !result.latestCheckSucceeded, selection: result.selection, update_failure: result.updateFailure };
+        if (signal.aborted) { store.recordRuntimeUpdate(daemonId, { ...observation, adoption_error: "agent_cancelled" }); return { ready: false }; }
+        if (result.selection) {
+          const selected = result.selection;
+          const changed = activationIds.filter(id => canonical(selections.get(id) ?? null) !== canonical(selected));
+          try { if (changed.length) await rotateSessions(changed); }
+          catch { store.recordRuntimeUpdate(daemonId, { ...observation, adoption_error: "supervisor_cleanup_unverified" }); fail("supervisor_cleanup_unverified"); }
+          for (const id of activationIds) selections.set(id, selected);
+        } else for (const id of activationIds) selections.delete(id);
+        store.recordRuntimeUpdate(daemonId, observation);
+      }
+      return { ready: [...groups.values()].every(g => g.activations.every(a => selections.has(a.activation_id))) };
+    },
     createSupervisor: (activation, tools, signal) => createAgentSession({ ...runtimeOptions(activation, "supervisor"), tools, signal }),
     runWorker: (activation, _task, tools, turn) => runAgentTurn({ ...runtimeOptions(activation, "semantic-worker"), tools, ...turn }),
   };
@@ -139,7 +188,7 @@ export async function agentCommand(input: { command: string; options: Options; s
     case "agent activate": {
       allowed(options, ["file"]); if (!config) fail("config_required");
       const admission = materializeAgentActivation(config, parseJson(readFileBounded(absolute(option(options, "file", true)), 2 * 1024 * 1024).toString("utf8")), store.state);
-      configuredAppServerOptions(config, "supervisor", store.state);
+      validateConfiguredAgentPaths(config);
       selectAgentScoringCredential(config, admission.policy, environment);
       const activation = agents.activate(admission);
       return { schema_version: "task-checkpoint-record.agent-activated.v1", activation_id: activation.activation_id,

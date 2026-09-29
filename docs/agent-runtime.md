@@ -19,6 +19,8 @@ exactly one process per explicit session construction and does not spawn workers
 const session = await createAgentSession({
   codexExecutable, codexHome, cwd,
   role: "supervisor", // gpt-6-sol / medium
+  executionMode: "danger-full-access", // Explicit service policy; API omission stays read-only.
+  qualificationPath, // Validated managed runtime receipt for this exact executable.
   tools: windowTools,
   signal: activationAbort.signal,
 });
@@ -41,8 +43,11 @@ try {
 ```
 
 `identity` contains the observed native thread/session IDs, owned PID, exact
-requested/observed model configuration and supported protocol version. No native
-parent-thread relationship is invented for host-created workers. The orchestrator
+requested/observed model configuration and supported protocol version.
+The native adapter also records `executionMode` and, for a managed version,
+`qualification.version`, `executableSha256` and `qualificationSha256`. These
+fields are copied into each native turn result and the recorder's native receipts.
+No native parent-thread relationship is invented for host-created workers. The orchestrator
 records its own activation/window/job relationships under a separate namespace.
 `onStarted` includes that same observed PID with the native turn identity so the
 scheduler can persist process ownership before a later daemon crash. The callback's
@@ -88,7 +93,7 @@ dedicated Codex home.
 
 ## Native dynamic tool boundary
 
-The inspected Codex 0.157.1/0.158.0 schema declares flat function tools through
+The inspected Codex 0.157.1/0.158.0/0.159.0 schema declares flat function tools through
 experimental `thread/start.dynamicTools`:
 
 ```json
@@ -150,6 +155,39 @@ tool is a host-orchestrated operation whose worker count, leases and evidence
 scope belong to the scheduler, not to arbitrary model arguments.
 
 ## Bounds and native restrictions
+
+Explicit `agent_service` activation defaults to `execution_mode:
+"danger-full-access"`. The process receives `approval_policy="never"` and
+`sandbox_mode="danger-full-access"`; `thread/start` receives
+`approvalPolicy:"never"` and `sandbox:"danger-full-access"`; every `turn/start`
+receives `approvalPolicy:"never"` and `sandboxPolicy:{type:"dangerFullAccess"}`.
+The adapter verifies the returned thread policy and refuses a changed policy
+before starting a model turn. `app-server` does not accept the TUI's `--sandbox`
+or `--dangerously-bypass-approvals-and-sandbox` shortcut flags. The RPC/config
+mapping provides the requested daemon execution mode without incompatible flags.
+
+`execution_mode:"read-only"` is an explicit alternative. Direct
+`createAgentSession` and legacy prepared-text `runAppServerTask` calls retain
+read-only when their `executionMode` option is omitted. Full access changes the
+native process sandbox; it does not expand the broker's allowed tools, source
+admissions, provider credentials or task acceptance authority.
+
+The exact built-in protocol versions are 0.157.1, 0.158.0 and 0.159.0. A future
+stable version requires `qualificationPath`: before launch the host replays the
+managed full-package inventory and protocol observations against its shipped
+contract. The native `initialize` response must then report that exact qualified
+version. A bare version string, prerelease or pass flag cannot qualify a binary.
+The receipt is a local host attestation, not an upstream signature or a claim
+that a native model evaluation passed.
+
+The configured daemon checks the official latest stable runtime after its
+startup acknowledgement and at the configured interval between serialized
+cycles. One resolved executable/qualification is fixed across a round and its
+worker fanout. A changed selection closes the old idle supervisor before a new
+epoch starts; an unverified closure prevents adoption and retains capacity.
+Previous epochs and consumed activation budgets remain in the same store.
+Neither importing a module, validating configuration, invoking a Hook nor using
+the legacy text API starts the updater. See [configuration.md](configuration.md).
 
 Defaults are: 30-second startup deadline, 300-second turn deadline, six-hour
 session lifetime, 128 turns, 32 tool calls per turn, four concurrent host tools,

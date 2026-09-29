@@ -8,6 +8,8 @@ import { processJob, workerOptions } from "./worker.ts";
 import type { AgentNativeReceipt, SupervisorActivation, SupervisorReduction, SupervisorRun, SupervisorSnapshot, WorkerReport, WorkerTaskSpec } from "./supervisor-types.ts";
 
 export interface SupervisorRuntimeFactory {
+  /** Runs after startup acknowledgement, between serialized cycles and before any extraction/model work. */
+  beforeCycle?(context:{signal:AbortSignal;rotateSessions:(activationIds:readonly string[])=>Promise<void>}):Promise<{ready:boolean}>;
   createSupervisor(activation:SupervisorActivation,tools:AgentTool[],signal?:AbortSignal):Promise<AgentSession>;
   runWorker(activation:SupervisorActivation,task:WorkerTaskSpec,tools:AgentTool[],turn:AgentTurnOptions<WorkerReport>):Promise<AgentTurnResult<WorkerReport>&{close:AgentCloseReceipt}>;
 }
@@ -191,6 +193,14 @@ export class SupervisorDaemon {
     const cycleAbort=new AbortController();this.currentAbort=cycleAbort;const stopCycle=()=>cycleAbort.abort();signal?.addEventListener("abort",stopCycle,{once:true});if(signal?.aborted)cycleAbort.abort();
     const cycleSignal=cycleAbort.signal;
     const cycle=async()=>{
+      if(this.options.runtimeFactory.beforeCycle){
+        const runtime=await this.options.runtimeFactory.beforeCycle({signal:cycleSignal,rotateSessions:async activationIds=>{
+          // The updater may stage new immutable files, but adoption waits for verified idle closure.
+          for(const id of activationIds){if(cycleSignal.aborted)fail("agent_cancelled");await this.dispose(id);}
+          for(const id of activationIds)this.store.assertResidentAdmission(id,this.options.maxResidentSessions??2);
+        }});
+        if(!runtime.ready)return{state:"runtime_unavailable",model_started:false,extracted:0};
+      }
       let extracted=0;
       for(const activation of this.store.activations(this.options.daemon_id)){
         if(this.closing||cycleSignal.aborted)break;
@@ -212,7 +222,7 @@ export class SupervisorDaemon {
     const token=randomUUID(),abort=new AbortController();this.store.registerService(this.options.daemon_id,token,Date.now(),!!hooks?.beforeFirstWork);
     const stop=()=>abort.abort();signal?.addEventListener("abort",stop,{once:true});if(signal?.aborted)abort.abort();
     const timer=setInterval(()=>{if(!this.store.heartbeat(this.options.daemon_id,token))abort.abort();},1000);
-    try{if(hooks?.beforeFirstWork){await hooks.beforeFirstWork(abort.signal);if(!this.store.acknowledgeService(this.options.daemon_id,token))abort.abort();}while(!abort.signal.aborted){const result=await this.once(abort.signal);if(result.state==="idle")await Bun.sleep(100);}}
+    try{if(hooks?.beforeFirstWork){await hooks.beforeFirstWork(abort.signal);if(!this.store.acknowledgeService(this.options.daemon_id,token))abort.abort();}while(!abort.signal.aborted){const result=await this.once(abort.signal);if(result.state==="idle"||result.state==="runtime_unavailable")await Bun.sleep(100);}}
     finally{clearInterval(timer);signal?.removeEventListener("abort",stop);await this.close();this.store.serviceStopped(this.options.daemon_id,token);}
   }
   async close():Promise<void>{

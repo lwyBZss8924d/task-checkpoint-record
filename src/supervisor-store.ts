@@ -329,6 +329,13 @@ export class SupervisorStore {
   recordObservation(run:SupervisorRun,name:string,body:unknown):void{
     const current=this.run(run.run_id);if(current.generation!==run.generation||current.lease_token!==run.lease_token)fail("agent_observation_fenced");this.event(str(name,128),run,body);
   }
+  recordRuntimeUpdate(daemonId:string,body:Record<string,unknown>):void{
+    this.requireInitialized();str(daemonId,128);
+    if(this.activations(daemonId).length===0)fail("agent_active_admission_required");
+    keys(object(body),["root","activation_ids","status","checked_at","latest_check_succeeded","stale","selection","update_failure","adoption_error"]);
+    if(Buffer.byteLength(canonical(body))>16384)fail("runtime_observation_budget");
+    this.event("runtime_update_observed",null,{...body,daemon_id:daemonId});
+  }
   rememberSnapshot(snapshot:SupervisorSnapshot):void{
     const{snapshot_sha256,...body}=snapshot;if(sha(canonical(body))!==snapshot_sha256)fail("snapshot_changed");
     this.db.query("INSERT OR IGNORE INTO agent_snapshots VALUES(?,?)").run(snapshot_sha256,canonical(snapshot));
@@ -429,7 +436,9 @@ export class SupervisorStore {
     return{schema_version:"task-checkpoint-record.supervisor-status.v1",initialized:true,
       activations:this.db.query("SELECT a.activation_id,a.binding_id,a.task_id,a.daemon_id,a.active,a.rounds_reserved,a.native_calls,a.tool_calls,a.tool_output_bytes,a.external_calls,(SELECT COUNT(*) FROM agent_workers w JOIN agent_runs r ON r.run_id=w.run_id WHERE r.activation_id=a.activation_id AND w.call_id IS NOT NULL AND w.process_closed=0 AND w.state!='running') AS unknown_worker_groups FROM agent_activations a ORDER BY a.rowid DESC LIMIT 100").all(),
       runs:this.db.query("SELECT state,COUNT(*) AS count FROM agent_runs GROUP BY state").all(),wakes:this.db.query("SELECT state,COUNT(*) AS count FROM agent_wakes GROUP BY state").all(),
-      services:this.db.query("SELECT daemon_id,pid,state,heartbeat,stop_requested FROM agent_services ORDER BY daemon_id LIMIT 32").all()};
+      services:this.db.query("SELECT daemon_id,pid,state,heartbeat,stop_requested FROM agent_services ORDER BY daemon_id LIMIT 32").all(),
+      runtime_updates:(this.db.query("SELECT seq,created_at,body FROM agent_events WHERE seq IN (SELECT MAX(seq) FROM agent_events WHERE event='runtime_update_observed' GROUP BY json_extract(body,'$.daemon_id'),json_extract(body,'$.root')) ORDER BY seq DESC LIMIT 32").all() as {seq:number;created_at:number;body:string}[])
+        .map(row=>({seq:row.seq,observed_at:new Date(row.created_at).toISOString(),...JSON.parse(row.body)}))};
   }
   jobs(options:{activation_id?:string;state?:string;limit?:number;offset?:number}={}):Record<string,unknown>{
     this.requireInitialized();keys(object(options),["activation_id","state","limit","offset"]);const where:string[]=[],args:string[]=[];

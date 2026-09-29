@@ -12,14 +12,18 @@ function fail(code: string): never { throw new ConfigurationError(code); }
 function inside(root: string, target: string): boolean {
   const rel = relative(root, target); return rel === "" || (rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel));
 }
-function selectedPaths(config: PortableConfig): { home: string; executable: string } {
+function selectedPaths(config: PortableConfig): { home: string; executable: string };
+function selectedPaths(config: PortableConfig, allowMissingExecutable: true): { home: string; executable: string | null };
+function selectedPaths(config: PortableConfig, allowMissingExecutable = false): { home: string; executable: string | null } {
   const { home, executable } = config.codex;
-  if (!home || !executable) fail("config_codex_paths_required");
-  for (const path of [home, executable]) if (!isAbsolute(path) || resolve(path) !== path) fail("config_codex_paths_absolute_required");
+  if (!home || (!executable && !allowMissingExecutable)) fail("config_codex_paths_required");
+  for (const path of [home, ...(executable ? [executable] : [])]) if (!isAbsolute(path) || resolve(path) !== path) fail("config_codex_paths_absolute_required");
   try {
-    noSymlinks(executable); accessSync(executable, constants.X_OK);
-    const binary = lstatSync(executable);
-    if (!binary.isFile()) fail("config_codex_executable_not_regular");
+    if (executable) {
+      noSymlinks(executable); accessSync(executable, constants.X_OK);
+      const binary = lstatSync(executable);
+      if (!binary.isFile()) fail("config_codex_executable_not_regular");
+    }
     noSymlinks(dirname(home));
     if (existsSync(home)) noSymlinks(home);
     const userHome = realpathSync(homedir());
@@ -37,12 +41,18 @@ function selectedPaths(config: PortableConfig): { home: string; executable: stri
   } catch (error) { if (error instanceof ConfigurationError) throw error; return fail("config_codex_path_unavailable"); }
   return { home, executable };
 }
-export function configuredAppServerOptions(config: PortableConfig, role: ModelRole, cwd: string): Pick<AppServerTaskOptions<unknown>, "codexExecutable" | "codexHome" | "cwd" | "role" | "selection"> {
+/** Latest-stable activation can precede first managed installation; authentication stays explicit. */
+export function validateConfiguredAgentPaths(config: PortableConfig): void {
+  if (config.agent_service.runtime_update.mode === "latest-stable") selectedPaths({ ...config, codex: { ...config.codex, executable: null } }, true);
+  else selectedPaths(config);
+}
+export function configuredAppServerOptions(config: PortableConfig, role: ModelRole, cwd: string): Pick<AppServerTaskOptions<unknown>, "codexExecutable" | "codexHome" | "cwd" | "role" | "selection" | "qualificationPath"> {
   const { home, executable } = selectedPaths(config);
   if (!["supervisor", "semantic-worker", "eval"].includes(role)) fail("config_invalid_model_role");
   if (!isAbsolute(cwd) || resolve(cwd) !== cwd) fail("config_model_cwd_absolute_required");
   const selection = role === "semantic-worker" ? config.codex.semantic_worker : config.codex[role];
-  return { codexExecutable: executable, codexHome: home, cwd, role, selection: { ...selection } };
+  return { codexExecutable: executable, codexHome: home, cwd, role, selection: { ...selection },
+    ...(config.codex.qualification_receipt ? { qualificationPath: config.codex.qualification_receipt } : {}) };
 }
 export function runConfiguredAppServerTask<T>(config: PortableConfig,
   options: Omit<AppServerTaskOptions<T>, "codexExecutable" | "codexHome" | "selection">): Promise<AppServerTaskResult<T>> {
@@ -52,7 +62,7 @@ export function authPlan(config: PortableConfig): object & { plan_sha256: string
   const { home, executable } = selectedPaths(config);
   if (existsSync(home) && readdirSync(home).length) fail("config_auth_setup_requires_empty_home");
   const binary = lstatSync(executable);
-  const configText = dedicatedConfigText()
+  const configText = dedicatedConfigText(config.agent_service.execution_mode)
     .replace(/^model = .*$/mu, `model = ${JSON.stringify(config.codex.supervisor.model)}`)
     .replace(/^model_reasoning_effort = .*$/mu, `model_reasoning_effort = ${JSON.stringify(config.codex.supervisor.effort)}`);
   const plan = { schema_version: "task-checkpoint.auth-plan.v1", action: "create_new_dedicated_profile",
