@@ -34,12 +34,6 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: lwyBZss8924d/ultrafast-atif-helper
-          ref: ${{ inputs.helper_commit }}
-          path: _bundle-helper-source
-          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -61,6 +55,13 @@ jobs:
       - run: python3 scripts/distribution/test_client_plugins.py
       - run: python3 container/test-protocol.py
       - run: python3 scripts/distribution/package.py archive --output "$RUNNER_TEMP/public-artifacts"
+      # Keep helper Vitest tests outside Bun's recorder test discovery.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: lwyBZss8924d/ultrafast-atif-helper
+          ref: ${{ inputs.helper_commit }}
+          path: _bundle-helper-source
+          persist-credentials: false
       - name: Assemble exact committed unified payload
         run: >-
           python3 scripts/distribution/bundle.py --recorder-repo .
