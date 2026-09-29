@@ -5,6 +5,7 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { runAppServerTask, type AppServerTaskOptions } from "../src/appserver.ts";
+import { fixtureQualifiedRuntime } from "./fixture-qualified-runtime.ts";
 
 const dirs: string[] = [];
 const retainedCleanupDirs = new Set<string>();
@@ -70,7 +71,8 @@ createInterface({input:process.stdin}).on("line", line => {
     if(mode === "rpc-error") {send({id:m.id,error:{code:-2,message:"PRIVATE_RPC_ERROR"}});return;}
     const path=process.env.CODEX_HOME+'/sessions/synthetic.jsonl';
     if(mode==="rollout") { mkdirSync(process.env.CODEX_HOME+'/sessions'); writeFileSync(path,'synthetic fixture, not a real rollout'); }
-    send({id:m.id,result:{thread:{id:thread,sessionId:"session-distinct",ephemeral:false,path:mode==="rollout"||mode==="future-rollout"?path:null},model:mode==="wrong-model"?"other":model,reasoningEffort:mode==="wrong-effort"?"low":effort,modelProvider:"openai",cwd:m.params.cwd,approvalPolicy:"never",approvalsReviewer:"user",sandbox:{type:"readOnly",networkAccess:false}}}); return;
+    const selected=m.params.sandbox==='danger-full-access';const full=mode==='wrong-sandbox'?!selected:selected;
+    send({id:m.id,result:{thread:{id:thread,sessionId:"session-distinct",ephemeral:false,path:mode==="rollout"||mode==="future-rollout"?path:null},model:mode==="wrong-model"?"other":model,reasoningEffort:mode==="wrong-effort"?"low":effort,modelProvider:"openai",cwd:m.params.cwd,approvalPolicy:mode==='wrong-approval'?'on-request':'never',approvalsReviewer:"user",sandbox:full?{type:"dangerFullAccess"}:{type:"readOnly",networkAccess:mode==='wrong-network'}}}); return;
   }
   if (m.method === "turn/start") {
     if(mode === "approval") { send({id:"server-approval",method:"item/commandExecution/requestApproval",params:{threadId:thread,turnId:turn}}); return; }
@@ -144,20 +146,43 @@ async function cleanupDescendantFixture(f: { dir: string; log: string }, protect
 }
 
 describe("owned Codex App Server adapter", () => {
-  test.each(["0.157.1", "0.158.0"])("explicit supported native version %s is observed in the result", async version => {
+  test("a future text runtime is accepted only with exact package/protocol and observed version binding",async()=>{
+    const f=await fixture("success",{},"task_checkpoint_record/0.999.0 (synthetic)"),qualified=fixtureQualifiedRuntime(f.options.codexExecutable);
+    const result=await runAppServerTask({...f.options,codexExecutable:qualified.executable,qualificationPath:qualified.qualificationPath});
+    expect(result.runtime.protocolVersion).toBe("codex-0.999.0");expect(result.runtime.executionMode).toBe("read-only");expect(result.runtime.qualification?.version).toBe("0.999.0");
+    const mismatch=await fixture(),wrong=fixtureQualifiedRuntime(mismatch.options.codexExecutable);
+    await expect(runAppServerTask({...mismatch.options,codexExecutable:wrong.executable,qualificationPath:wrong.qualificationPath})).rejects.toMatchObject({code:"runtime_qualification_version_mismatch"});
+    expect((await mismatch.requests()).map(c=>c.method)).toEqual(["initialize"]);
+  });
+  test.each(["0.157.1", "0.158.0", "0.159.0"])("explicit supported native version %s is observed in the result", async version => {
     const f = await fixture("success", {}, `task_checkpoint_record/${version} (Darwin; fixture)`);
     const result = await runAppServerTask(f.options);
-    expect(result.runtime.protocolVersion).toBe(`codex-${version}` as "codex-0.157.1" | "codex-0.158.0");
+    expect(result.runtime.protocolVersion).toBe(`codex-${version}`);
     expect(result.output).toEqual({ ok: true });
   });
   test.each([
     "codex_cli_rs/0.157.0 (Darwin)", "codex_cli_rs/0.158.1 (Darwin)",
-    "codex_cli_rs/0.159.0 (Darwin)", "codex_cli_rs/0.158.0-alpha.1 (Darwin)",
+    "codex_cli_rs/0.159.1 (Darwin)", "codex_cli_rs/0.158.0-alpha.1 (Darwin)",
     "codex_cli_rs/0.999.0 (compatibility 0.158.0)", "unknown 0.157.1",
   ])("unsupported or misleading native version is rejected: %s", async userAgent => {
     const f = await fixture("success", {}, userAgent);
     await expect(runAppServerTask(f.options)).rejects.toMatchObject({ code: "unsupported_codex_version" });
     expect((await f.requests()).map(r => r.method)).toEqual(["initialize"]);
+  });
+  test.each([undefined, "read-only", "danger-full-access"] as const)("execution mode %s is consistent across argv, thread and turn",async mode=>{
+    const f=await fixture(),result=await runAppServerTask({...f.options,...(mode?{executionMode:mode}:{})});
+    const expected=mode??"read-only",calls=await f.requests();
+    expect(result.runtime.executionMode).toBe(expected);expect(result.runtime.qualification).toBeNull();
+    expect(calls[0].env.args).toContain(`sandbox_mode=${JSON.stringify(expected)}`);
+    expect(calls[0].env.args).not.toContain("--sandbox");expect(calls[0].env.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(calls.find(c=>c.method==='thread/start').params).toMatchObject({approvalPolicy:"never",sandbox:expected,config:{sandbox_mode:expected}});
+    expect(calls.find(c=>c.method==='turn/start').params).toMatchObject({approvalPolicy:"never",sandboxPolicy:expected==='danger-full-access'?{type:"dangerFullAccess"}:{type:"readOnly",networkAccess:false}});
+  });
+  test.each(["read-only","danger-full-access"] as const)("a changed native sandbox/approval response cannot silently replace %s",async executionMode=>{
+    for(const mode of ["wrong-sandbox","wrong-approval"]){const f=await fixture(mode);await expect(runAppServerTask({...f.options,executionMode})).rejects.toMatchObject({code:"runtime_policy_not_honored"});expect((await f.requests()).some(c=>c.method==='turn/start')).toBe(false);}
+  });
+  test("read-only response with network access is not the requested policy",async()=>{
+    const f=await fixture("wrong-network");await expect(runAppServerTask(f.options)).rejects.toMatchObject({code:"runtime_policy_not_honored"});
   });
   test.each(["success", "partial", "early", "ignore-eof", "duplicate-completion"])("%s: handshake, native IDs, bounded output and owned cleanup", async mode => {
     const f = await fixture(mode); const result = await runAppServerTask(f.options);

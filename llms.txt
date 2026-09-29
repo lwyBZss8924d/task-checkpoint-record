@@ -8,6 +8,7 @@
 - [Architecture](docs/architecture.md): callback admission, jobs, coverage and model separation.
 - [Agent service](docs/agent-service.md): explicit activation, resident supervisor/worker PTC loop, recall, cancellation and finite budgets.
 - [Resident runtime](docs/agent-runtime.md): dynamic tool transport, process/thread ownership and observed native receipts.
+- [Runtime updates](docs/runtime-updates.md): official latest-stable discovery, verified package selection, safe idle updates and automatic image builds.
 - [Supervisor contract](docs/agent-supervisor-plan.md): scoped delegation, evidence graph, cached Stop and release acceptance.
 - [Helper protocol](docs/helper-protocol.md): explicit bounded process input/output.
 - [Installation](docs/installation.md): exact plan/apply/verify/rollback for local CLI and Hook definitions.

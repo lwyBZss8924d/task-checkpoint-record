@@ -7,20 +7,21 @@ import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { Store } from "../src/store.ts";
 import { SupervisorStore } from "../src/supervisor-store.ts";
-import { SupervisorDaemon, type SupervisorPtcFactory, type SupervisorRuntimeFactory } from "../src/supervisor.ts";
+import { SupervisorDaemon, validateReduction, validateWorkerReport, type SupervisorPtcFactory, type SupervisorRuntimeFactory } from "../src/supervisor.ts";
+import { citationAlias } from "../src/ptc-tools.ts";
 import { createSupervisorPolicy } from "../src/supervisor-policy.ts";
 import { canonical, fingerprint, openRegular, sha, TcrError } from "../src/security.ts";
 import { runHelper, runScoringHelper, workerOptions } from "../src/worker.ts";
-import type { AgentCloseReceipt, AgentIdentity, AgentSession, AgentTool, AgentTurnOptions, AgentTurnResult } from "../src/agent-runtime.ts";
+import { AgentToolArgumentsError, createAgentSession, type AgentCloseReceipt, type AgentIdentity, type AgentSession, type AgentTool, type AgentTurnOptions, type AgentTurnResult } from "../src/agent-runtime.ts";
 import type { SupervisorActivation, SupervisorPolicy, WorkerReport } from "../src/supervisor-types.ts";
 import type { NormalizedRecord } from "../src/types.ts";
 
 const roots:string[]=[],stores:Store[]=[],daemons:SupervisorDaemon[]=[];
 const helper=fileURLToPath(new URL("./fixture-helper.ts",import.meta.url));
 afterEach(async()=>{for(const d of daemons.splice(0))try{await d.close();}catch{}for(const s of stores.splice(0))s.close();for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true});});
-function setup(overrides:Partial<SupervisorPolicy>={},queued=false){
+function setup(overrides:Partial<SupervisorPolicy>={},queued=false,initialRecords=1){
   const root=realpathSync(mkdtempSync(join(tmpdir(),"tcr-supervisor-")));roots.push(root);const sourceRoot=join(root,"sources");mkdirSync(sourceRoot,{mode:0o700});
-  const source=join(sourceRoot,"raw.jsonl"),line=JSON.stringify({type:"message",entry_id:"synthetic-entry",text:"SYNTHETIC_BODY"})+"\n";writeFileSync(source,line,{mode:0o600});
+  const source=join(sourceRoot,"raw.jsonl"),line=JSON.stringify({type:"message",entry_id:"synthetic-entry",text:"SYNTHETIC_BODY"})+"\n";writeFileSync(source,line.repeat(initialRecords),{mode:0o600});
   const fixed=join(root,"fixed.bunfig.toml");writeFileSync(fixed,"# synthetic owned config\n",{mode:0o600});
   const runtime_config={recorder:{helper_command:[process.execPath,"--no-env-file","--no-install","--config="+fixed,helper],concurrency:2,max_jobs:64,timeout_ms:2000,lease_ms:4000,page_bytes:16384,page_limit:100,stdout_bytes:1048576}};
   const base=new Store(join(root,"state"),{initialize:true});stores.push(base);const store=new SupervisorStore(base);
@@ -36,8 +37,8 @@ function setup(overrides:Partial<SupervisorPolicy>={},queued=false){
 }
 function closeReceipt(identity:AgentIdentity,turns=1):AgentCloseReceipt{return{schemaVersion:"task-checkpoint.agent-close.v1",native:{threadId:identity.threadId,sessionId:identity.sessionId},pid:identity.pid,ownedProcessClosed:true,ownedProcessGroupClosed:true,hostHandlersSettled:true,turnsStarted:turns,reason:"owner_closed"};}
 function turnResult<T>(identity:AgentIdentity,turnId:string,output:T):AgentTurnResult<T>{return{schemaVersion:"task-checkpoint.agent-turn.v1",output,native:{threadId:identity.threadId,sessionId:identity.sessionId,turnId},requested:identity.requested,observed:identity.observed,input:{dataClass:"metadata_only",sha256:sha("synthetic"),bytes:9},usage:null,toolReceipts:[],runtime:{protocolVersion:"codex-0.157.1",pid:identity.pid,sessionOpen:true,turnIndex:1,elapsedMs:1,nativeCompactions:0,toolPolicy:"restricted-native-and-explicit-host-allowlist"}};}
-function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:boolean;badNativeGraph?:boolean;recommendAttention?:boolean}={}){
-  let supervisors=0,workers=0,active=0,peak=0,closed=0;const observedThreads:string[]=[];
+function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:boolean;badNativeGraph?:boolean;recommendAttention?:boolean;useCitationAliases?:boolean;beforeDelegate?:(tool:AgentTool,prompt:Record<string,any>)=>void}={}){
+  let supervisors=0,workers=0,active=0,peak=0,closed=0;const observedThreads:string[]=[],submittedCitations:{role:string;refs:string[]}[]=[];
   const identity=(activation:SupervisorActivation,worker:boolean,id:number):AgentIdentity=>({threadId:(worker?"worker-thread-":"supervisor-thread-")+id,sessionId:(worker?"worker-session-":"supervisor-session-")+id,pid:10000+id,role:worker?"semantic-worker":"supervisor",requested:activation.policy[worker?"worker":"supervisor"],observed:activation.policy[worker?"worker":"supervisor"],protocolVersion:"codex-0.157.1"});
   const factory:SupervisorRuntimeFactory={
     async createSupervisor(activation,initialTools){
@@ -46,8 +47,10 @@ function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:
       const session:AgentSession={identity:id,closed:closedPromise,assertHealthy(){if(ended)throw new TcrError("synthetic_closed");},async runTurn<T>(turn:AgentTurnOptions<T>){
         const turnId="supervisor-turn-"+(++turns);observedThreads.push(id.threadId);turn.onStarted?.({threadId:id.threadId,sessionId:id.sessionId,turnId});
         const tool=(turn.tools??initialTools)[0];const tasks=Array.from({length:options.workers??2},(_,i)=>({task_key:"worker-"+i,objective:"Inspect this bounded source selection."}));
+        options.beforeDelegate?.(tool,JSON.parse(turn.input.text));
         const args=tool.validateArguments({tasks});const reply=await tool.execute(args,{threadId:id.threadId,turnId,callId:"delegate-"+turns,signal:turn.signal??new AbortController().signal});
-        const evidence=(reply.value as any).workers.map((w:any)=>w.evidence_refs[0]);
+        const evidence=(reply.value as any).workers.map((w:any)=>options.useCitationAliases?w.citation_refs[0]:w.evidence_refs[0]);
+        submittedCitations.push({role:"supervisor",refs:[...evidence]});
         const output=turn.validateOutput({summary:"Bounded workers completed.",continuity_context:"Continue using the retained source handles.",findings:[{category:"progress",statement:"Each worker inspected scoped evidence.",evidence_refs:evidence.slice(0,32)}],next_actions:options.recommendAttention?[{action_id:"owner-review",reason:"Inspect the proposal before sealing.",evidence_refs:[evidence[0]]}]:[],recommendation:options.recommendAttention?"needs_attention":"continue"});
         return{...turnResult(id,turnId,output),toolReceipts:[{callId:"delegate-"+turns,tool:tool.name,threadId:id.threadId,turnId,argumentSha256:sha(canonical({tasks})),argumentBytes:Buffer.byteLength(canonical({tasks})),resultSha256:sha(canonical({data_class:reply.dataClass,value:reply.value})),resultBytes:Buffer.byteLength(canonical(reply)),dataClass:reply.dataClass,status:"succeeded"}]};
       },async close(){if(!ended){closed++;ended=true;}const receipt=closeReceipt(id,turns);resolveClose(receipt);return receipt;},async cancel(){return this.close();}};return session;
@@ -59,16 +62,17 @@ function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:
         if(options.holdWorkers)await new Promise<void>((_resolve,reject)=>{const stop=()=>reject(Object.assign(new TcrError("synthetic_cancelled"),{native:{threadId:id.threadId,turnId},closeReceipt:closeReceipt(id)}));if(turn.signal?.aborted)stop();else turn.signal?.addEventListener("abort",stop,{once:true});});
         await Bun.sleep(5);
         const tool=tools[0],callId="query-"+id.threadId;const result=await tool.execute(tool.validateArguments({}),{threadId:id.threadId,turnId,callId,signal:turn.signal??new AbortController().signal});
-        const ref=(result.value as any).evidence_ref;
+        const ref=options.useCitationAliases?(result.value as any).citation_ref:(result.value as any).evidence_ref;
+        submittedCitations.push({role:"worker",refs:[ref]});
         const report=turn.validateOutput({task_key:task.task_key,summary:"Observed bounded metadata.",claims:[{claim_id:"observed",statement:"The selected record is present.",evidence_refs:[options.badEvidence?"not-issued":ref]}],omissions:[]});
         return{...turnResult(id,turnId,report),toolReceipts:[{callId,tool:tool.name,threadId:options.badNativeGraph?"borrowed-thread":id.threadId,turnId,argumentSha256:sha("{}"),argumentBytes:2,resultSha256:sha(canonical({data_class:result.dataClass,value:result.value})),resultBytes:Buffer.byteLength(canonical(result)),dataClass:result.dataClass,status:"succeeded"}],close:closeReceipt(id)};
       }finally{active--;}
     }
   };
-  return{factory,status:()=>({supervisors,workers,active,peak,closed,observedThreads})};
+  return{factory,status:()=>({supervisors,workers,active,peak,closed,observedThreads,submittedCitations})};
 }
 const fakePtc:SupervisorPtcFactory=context=>({tools:[{name:"tcr_query",description:"Synthetic scoped metadata query",inputSchema:{type:"object",additionalProperties:false},validateArguments:v=>v,async execute(_args,native){
-  context.assertActive();const ref="ptc:"+sha(context.workerId+native.threadId+native.turnId+native.callId),value={evidence_ref:ref,record_count:context.snapshot.record_refs.length};
+  context.assertActive();const ref="ptc-evidence:"+sha(context.workerId+native.threadId+native.turnId+native.callId),value={evidence_ref:ref,citation_ref:citationAlias(ref)!,record_count:context.snapshot.record_refs.length};
   await context.onReceipt({schema_version:"task-checkpoint.ptc-receipt.v1",evidence_ref:ref,activation_id:context.activation.activation_id,snapshot_sha256:context.snapshot.snapshot_sha256,binding_id:context.snapshot.binding_id,task_id:context.snapshot.task_id,window_id:context.snapshot.window_id,thread_id:native.threadId,turn_id:native.turnId,call_id:native.callId,tool:"tcr_query",sequence:1,status:"completed",error_code:null,arguments:{},arguments_sha256:sha("{}"),result:{dataClass:"metadata_only",value},result_sha256:sha(canonical(value)),record_handles:context.snapshot.record_refs.map(r=>r.handle),source_refs:[],helper:null,external_attempt_reserved:false,scoring_config_sha256:null});
   return{dataClass:"metadata_only",value};
 }}]});
@@ -91,6 +95,119 @@ test("two workers make scoped tool calls and produce only an intermediate persis
   const evidence=s.store.resolve(resolved.item.evidence_deeplinks[0]) as any;expect(evidence.item.status).toBe("completed");expect(evidence.source_bytes_read).toBe(false);
   expect(()=>s.store.resolve("https://invalid.example/secret")).toThrow("foreign_agent_deeplink");expect(()=>s.store.resolve(proposal.deeplink,["lease_token"])).toThrow("unknown_agent_projection_field");
 });
+test("worker and supervisor short citations canonicalize to stored full refs through a complete fake turn",async()=>{
+  const s=setup();s.activate();const f=fakeRuntime({useCitationAliases:true,recommendAttention:true}),{d}=daemon(s,f);
+  expect((await d.once()).state).toBe("succeeded");
+  const submitted=f.status().submittedCitations;expect(submitted).toHaveLength(3);
+  expect(submitted.every(item=>item.refs.every(ref=>/^cite:[a-f0-9]{16}$/.test(ref)))).toBe(true);
+  const proposal=JSON.parse((s.base.db.query("SELECT body FROM agent_proposals").get() as any).body),allowed=new Set(proposal.evidence_refs);
+  for(const worker of proposal.workers){
+    const owned=new Set((s.base.db.query("SELECT evidence_ref FROM agent_evidence WHERE worker_id=?").all(worker.worker_id) as any[]).map(row=>row.evidence_ref));
+    expect(worker.result.claims.every((claim:any)=>claim.evidence_refs.every((ref:string)=>/^ptc-evidence:[a-f0-9]{64}$/.test(ref)&&owned.has(ref)))).toBe(true);
+  }
+  for(const item of [...proposal.reduction.findings,...proposal.reduction.next_actions])expect(item.evidence_refs.every((ref:string)=>/^ptc-evidence:[a-f0-9]{64}$/.test(ref)&&allowed.has(ref))).toBe(true);
+  const outputs=s.base.db.query("SELECT result_json FROM agent_model_calls").all() as any[];
+  expect(outputs).toHaveLength(3);expect(outputs.every(row=>!JSON.stringify(JSON.parse(row.result_json)).includes('"cite:'))).toBe(true);
+});
+test("citation aliases reject collisions and foreign scope while exact full IDs remain accepted",()=>{
+  const prefix="0123456789abcdef",a="ptc-evidence:"+prefix+"0".repeat(48),collision="ptc-evidence:"+prefix+"1".repeat(48),foreign="ptc-evidence:"+"f".repeat(64);
+  const task={task_key:"worker",objective:"Inspect scoped metadata."};
+  const report=(refs:string[])=>({task_key:task.task_key,summary:"Observed.",claims:[{claim_id:"one",statement:"Observed.",evidence_refs:refs}],omissions:[]});
+  const reduction=(refs:string[])=>({summary:"Observed.",continuity_context:"Continue.",findings:[{category:"progress",statement:"Observed.",evidence_refs:refs}],next_actions:[],recommendation:"continue"});
+  expect(validateWorkerReport(report([citationAlias(a)!]),task,new Set([a])).claims[0].evidence_refs).toEqual([a]);
+  expect(()=>validateWorkerReport(report([citationAlias(a)!]),task,new Set([a,collision]))).toThrow("model_evidence_alias_ambiguous");
+  expect(()=>validateReduction(reduction([citationAlias(a)!]),new Set([a,collision]))).toThrow("model_evidence_alias_ambiguous");
+  expect(validateWorkerReport(report([a]),task,new Set([a,collision])).claims[0].evidence_refs).toEqual([a]);
+  expect(validateReduction(reduction([a]),new Set([a,collision])).findings[0].evidence_refs).toEqual([a]);
+  expect(()=>validateWorkerReport(report([citationAlias(foreign)!]),task,new Set([a]))).toThrow("model_evidence_outside_scope");
+  expect(()=>validateReduction(reduction([citationAlias(foreign)!]),new Set([a]))).toThrow("model_evidence_outside_scope");
+  expect(()=>validateWorkerReport(report([a.slice(0,-1)]),task,new Set([a]))).toThrow("model_evidence_outside_scope");
+  expect(()=>validateWorkerReport(report([citationAlias(a)!,a]),task,new Set([a]))).toThrow("model_evidence_duplicate");
+});
+test("delegate rejects both empty selections before dispatch, then corrected omission admits one fanout",async()=>{
+  const s=setup();s.activate();let rejected=false;const selected:string[][]=[];
+  const f=fakeRuntime({beforeDelegate:(tool,prompt)=>{
+    expect(prompt.record_count).toBe(1);expect(prompt.record_preview).toHaveLength(1);
+    expect(Object.keys(prompt.record_preview[0]).sort()).toEqual(["kind","record_handle"]);
+    expect(prompt.record_selection).toContain("Omit record_handles");expect(prompt.instructions).toContain("successful");
+    const selector=(tool.inputSchema as any).properties.tasks.items.properties.record_handles;
+    expect(selector).toMatchObject({minItems:1,uniqueItems:true});expect(selector.description).toContain("Empty [] and null are invalid");
+    const invalid={tasks:[{task_key:"identity",objective:"Inspect current native identities.",record_handles:[]},{task_key:"continuity",objective:"Inspect current tool continuity.",record_handles:[]}]};
+    try{tool.validateArguments(invalid);}catch(error){expect(error).toBeInstanceOf(AgentToolArgumentsError);expect((error as AgentToolArgumentsError).hint).toContain("Omit record_handles");expect((error as AgentToolArgumentsError).hint).toContain("No workers were dispatched");rejected=true;}
+    expect(rejected).toBe(true);expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_workers").get() as any).n).toBe(0);
+    expect(s.base.db.query("SELECT state FROM agent_tool_calls WHERE worker_id IS NULL").all()).toEqual([{state:"arguments_rejected"}]);
+    expect((s.store.status() as any).activations[0].native_calls).toBe(1);
+  }});
+  const {d}=daemon(s,f,context=>{selected.push(context.snapshot.record_refs.map(r=>r.handle));return fakePtc(context);});
+  expect((await d.once()).state).toBe("succeeded");expect(selected).toHaveLength(2);expect(selected.every(handles=>handles.length===1)).toBe(true);
+  expect(f.status()).toMatchObject({supervisors:1,workers:2});
+  expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_events WHERE event='fanout_admitted'").get() as any).n).toBe(1);
+  expect(s.base.db.query("SELECT state FROM agent_tool_calls WHERE worker_id IS NULL ORDER BY rowid").all()).toEqual([{state:"arguments_rejected"},{state:"succeeded"}]);
+  expect((s.store.status() as any).activations[0]).toMatchObject({native_calls:3,tool_calls:4});
+});
+test("delegate rejects null, duplicate and foreign selectors and bounds supervisor metadata previews",async()=>{
+  const s=setup({},true,25);s.activate();
+  const f=fakeRuntime({beforeDelegate:(tool,prompt)=>{
+    expect(prompt.record_count).toBeGreaterThan(20);expect(prompt.record_preview).toHaveLength(20);
+    expect(JSON.stringify(prompt)).not.toContain("SYNTHETIC_BODY");
+    const handle=prompt.record_preview[0].record_handle;
+    for(const record_handles of [null,[handle,handle],["record:not-in-this-snapshot"]]){
+      expect(()=>tool.validateArguments({tasks:[{task_key:"inspect",objective:"Inspect current metadata.",record_handles}]})).toThrow(AgentToolArgumentsError);
+    }
+    expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_workers").get() as any).n).toBe(0);
+  }});
+  const {d}=daemon(s,f);expect((await d.once()).state).toBe("succeeded");expect(f.status().workers).toBe(2);
+});
+test("stdio supervisor corrects empty delegate selections within the same turn and dispatches workers only once",async()=>{
+  const s=setup();s.activate();const nativeHome=join(s.root,"synthetic-native-home"),wire=join(s.root,"delegate-wire.jsonl"),executable=join(s.root,"synthetic-stdio-supervisor");
+  mkdirSync(nativeHome,{mode:0o700});
+  const script=`#!${process.execPath}\n`+String.raw`
+import {appendFileSync} from "node:fs";
+import {createInterface} from "node:readline";
+const send=x=>process.stdout.write(JSON.stringify(x)+"\n"),thread="synthetic-supervisor-thread",turn="synthetic-supervisor-turn";
+const tasks=[{task_key:"identity",objective:"Inspect current native identities."},{task_key:"continuity",objective:"Inspect current tool continuity."}];
+function call(callId,args){
+ send({method:"item/started",params:{threadId:thread,turnId:turn,item:{type:"dynamicToolCall",id:callId,tool:"tcr_delegate",namespace:null,status:"inProgress"}}});
+ send({id:callId,method:"item/tool/call",params:{threadId:thread,turnId:turn,callId,tool:"tcr_delegate",namespace:null,arguments:args}});
+}
+createInterface({input:process.stdin}).on("line",line=>{
+ const m=JSON.parse(line);appendFileSync(WIRE,JSON.stringify(m)+"\n");
+ if(m.method==="initialize"){send({id:m.id,result:{userAgent:"task_checkpoint_record_agent/0.159.0 (synthetic)"}});return;}
+ if(m.method==="initialized")return;
+ if(m.method==="config/read"){send({id:m.id,result:{config:{mcp_servers:{}}}});return;}
+ if(m.method==="account/read"){send({id:m.id,result:{account:{type:"chatgpt"},requiresOpenaiAuth:true}});return;}
+ if(m.method==="model/list"){send({id:m.id,result:{data:["gpt-6-sol","gpt-6-luna"].map(model=>({model,supportedReasoningEfforts:[{reasoningEffort:"medium"},{reasoningEffort:"high"}]})),nextCursor:null}});return;}
+ if(m.method==="thread/start"){send({id:m.id,result:{thread:{id:thread,sessionId:"synthetic-supervisor-session",ephemeral:false},model:m.params.model,reasoningEffort:m.params.config.model_reasoning_effort,modelProvider:"openai",cwd:m.params.cwd,approvalPolicy:"never",approvalsReviewer:"user",sandbox:{type:"readOnly",networkAccess:false}}});return;}
+ if(m.method==="turn/start"){send({id:m.id,result:{turn:{id:turn,status:"inProgress",items:[]}}});call("empty-selection",{tasks:tasks.map(t=>({...t,record_handles:[]}))});return;}
+ if(m.id==="empty-selection"&&m.result){
+  const value=JSON.parse(m.result.contentItems[0].text).value;
+  if(m.result.success||value.error!=="invalid_arguments"||!value.hint?.includes("Omit record_handles"))throw Error("missing_actionable_rejection");
+  send({method:"item/completed",params:{threadId:thread,turnId:turn,item:{type:"dynamicToolCall",id:m.id,tool:"tcr_delegate",namespace:null,status:"failed",success:false}}});
+  call("corrected-omission",{tasks});return;
+ }
+ if(m.id==="corrected-omission"&&m.result){
+  if(!m.result.success)throw Error("corrected_arguments_failed");
+  const value=JSON.parse(m.result.contentItems[0].text).value,refs=value.workers.map(w=>w.evidence_refs[0]);
+  const tool={type:"dynamicToolCall",id:m.id,tool:"tcr_delegate",namespace:null,status:"completed",success:true};
+  send({method:"item/completed",params:{threadId:thread,turnId:turn,item:tool}});
+  const answer={type:"agentMessage",id:"synthetic-final",phase:"final_answer",text:JSON.stringify({summary:"Two scoped workers completed.",continuity_context:"Continue with the returned source evidence.",findings:[{category:"progress",statement:"Scoped evidence was inspected.",evidence_refs:refs}],next_actions:[],recommendation:"continue"})};
+  send({method:"item/completed",params:{threadId:thread,turnId:turn,item:answer}});
+  send({method:"turn/completed",params:{threadId:thread,turn:{id:turn,status:"completed",items:[tool,answer]}}});
+ }
+});
+`.replace("WIRE",JSON.stringify(wire));
+  writeFileSync(executable,script,{mode:0o700});const f=fakeRuntime();
+  f.factory.createSupervisor=async(activation,tools,signal)=>createAgentSession({codexExecutable:executable,codexHome:nativeHome,cwd:s.root,selection:activation.policy.supervisor,tools,signal,
+    limits:{startupMs:1000,deadlineMs:3000,sessionMs:10000,shutdownMs:50,toolDeadlineMs:1000}});
+  const {d}=daemon(s,f);const outcome=await d.once();expect(outcome.state).toBe("succeeded");expect(f.status().workers).toBe(2);
+  const messages=readFileSync(wire,"utf8").trim().split("\n").map(line=>JSON.parse(line));
+  const bad=messages.find(m=>m.id==="empty-selection"&&m.result),good=messages.find(m=>m.id==="corrected-omission"&&m.result);
+  expect(bad.result.success).toBe(false);expect(JSON.parse(bad.result.contentItems[0].text).value.error).toBe("invalid_arguments");expect(good.result.success).toBe(true);
+  expect(messages.filter(m=>m.method==="turn/start")).toHaveLength(1);
+  expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_events WHERE event='fanout_admitted'").get() as any).n).toBe(1);
+  const proposal=JSON.parse((s.base.db.query("SELECT body FROM agent_proposals").get() as any).body),supervisor=proposal.native_calls.find((call:any)=>call.role==="supervisor");
+  expect(supervisor.native.runtime_receipt.tool_receipts.map((receipt:any)=>receipt.status)).toEqual(["arguments_rejected","succeeded"]);
+});
 test("unified daemon drains only activated binding ETL and reuses one native supervisor across two windows",async()=>{
   const s=setup({},true);s.activate();const{d,fake}=daemon(s);expect((await d.once()).state).toBe("succeeded");
   appendFileSync(s.source,'{"type":"message","entry_id":"later","text":"synthetic"}\n');
@@ -99,6 +216,43 @@ test("unified daemon drains only activated binding ETL and reuses one native sup
   expect((s.base.db.query("SELECT COUNT(*) AS n FROM agent_sessions").get() as any).n).toBe(1);
   appendFileSync(s.source,'{"type":"message","entry_id":"budget-stop"}\n');s.base.enqueue(s.binding,{hook_event_name:"Stop",native_session_id:"master-session",native_turn_id:"master-turn",transcript_path:s.source,input_sha256:sha("hook-3"),delivery_id:null});
   expect((await d.once()).state).toBe("idle");expect(fake.status().workers).toBe(4);expect((s.store.status() as any).wakes.some((r:any)=>r.state==="budget_exhausted")).toBe(true);
+});
+test("runtime maintenance waits for startup acknowledgement and never runs during an active fanout",async()=>{
+  const s=setup({},true);s.activate();const f=fakeRuntime({holdWorkers:true});let checks=0;
+  f.factory.beforeCycle=async()=>{checks++;return{ready:true};};const {d}=daemon(s,f);
+  const before=new AbortController();await d.run(before.signal,{beforeFirstWork:async()=>{expect(checks).toBe(0);before.abort();}});
+  expect(checks).toBe(0);expect(f.status().supervisors).toBe(0);
+  const second=new SupervisorDaemon({store:s.store,daemon_id:"daemon",runtimeFactory:f.factory,ptcFactory:fakePtc});daemons.push(second);
+  const active=new AbortController(),pending=second.once(active.signal);
+  for(let i=0;i<100&&f.status().active===0;i++)await Bun.sleep(5);
+  expect(f.status().active).toBeGreaterThan(0);expect(checks).toBe(1);
+  await expect(second.once()).rejects.toThrow("agent_daemon_busy");expect(checks).toBe(1);
+  active.abort();await pending;expect(checks).toBe(1);
+});
+test("idle runtime rotation links epochs and preserves consumed activation budgets",async()=>{
+  const s=setup({},true);s.activate();const f=fakeRuntime();let replace=false,checks=0;
+  f.factory.beforeCycle=async({rotateSessions})=>{checks++;if(replace){expect(f.status().active).toBe(0);await rotateSessions(["activation"]);replace=false;}return{ready:true};};
+  const {d}=daemon(s,f);expect((await d.once()).state).toBe("succeeded");const first=(s.base.db.query("SELECT epoch_id FROM agent_sessions").get() as any).epoch_id;
+  const before=(s.store.status() as any).activations[0];expect(before.rounds_reserved).toBe(1);expect(before.native_calls).toBe(3);
+  appendFileSync(s.source,'{"type":"message","entry_id":"next-runtime-window"}\n');s.base.enqueue(s.binding,{hook_event_name:"PreCompact",native_session_id:"master-session",native_turn_id:"master-turn-2",transcript_path:s.source,input_sha256:sha("runtime-cycle-two"),delivery_id:null});
+  replace=true;expect((await d.once()).state).toBe("succeeded");expect(checks).toBe(2);expect(f.status()).toMatchObject({supervisors:2,workers:4,closed:1});
+  const epochs=s.base.db.query("SELECT epoch_id,previous_epoch_id,closed_at FROM agent_sessions ORDER BY rowid").all() as any[];
+  expect(epochs).toHaveLength(2);expect(epochs[0].closed_at).not.toBeNull();expect(epochs[1].previous_epoch_id).toBe(first);
+  const after=(s.store.status() as any).activations[0];expect(after.rounds_reserved).toBe(2);expect(after.native_calls).toBe(6);
+});
+test("runtime rotation with unknown closure retains capacity and does not consume the next round",async()=>{
+  const s=setup({},true);s.activate();const f=fakeRuntime(),original=f.factory.createSupervisor;let rotate=false;
+  f.factory.createSupervisor=async(...args)=>{const session=await original(...args);return{...session,close:async()=>{throw new TcrError("owned_group_unverified");}};};
+  f.factory.beforeCycle=async({rotateSessions})=>{if(rotate)await rotateSessions(["activation"]);return{ready:true};};
+  const {d}=daemon(s,f);expect((await d.once()).state).toBe("succeeded");rotate=true;
+  await expect(d.once()).rejects.toThrow("owned_group_unverified");expect(f.status().supervisors).toBe(1);
+  const epoch=s.base.db.query("SELECT close_error,closed_at FROM agent_sessions").get() as any;
+  expect(epoch.close_error).toBe("owned_group_unverified");expect(epoch.closed_at).toBeNull();expect((s.store.status() as any).activations[0].native_calls).toBe(3);
+});
+test("unavailable qualified runtime leaves extraction and model admission unconsumed",async()=>{
+  const s=setup({},true);s.activate();const f=fakeRuntime();f.factory.beforeCycle=async()=>({ready:false});const {d}=daemon(s,f);
+  expect(await d.once()).toEqual({state:"runtime_unavailable",model_started:false,extracted:0});expect(f.status().supervisors).toBe(0);
+  expect((s.base.status().jobs as any[])[0].state).toBe("queued");expect((s.store.status() as any).activations[0].rounds_reserved).toBe(0);
 });
 test("configured 32-worker fanout stays bounded and compact reply permits reduction",async()=>{
   const s=setup({max_workers:32,worker_concurrency:32,native_call_budget:33,max_rounds:1});s.activate();const{d,fake}=daemon(s,fakeRuntime({workers:32}));expect((await d.once()).state).toBe("succeeded");

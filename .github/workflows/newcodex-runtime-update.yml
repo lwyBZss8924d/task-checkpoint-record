@@ -1,0 +1,217 @@
+name: Follow stable Codex and publish checked universal images
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish tested images and move current after both architectures pass
+        required: true
+        default: true
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: latest-stable-codex-universal-image
+  cancel-in-progress: false
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  BUN_OPTIONS: ''
+  NODE_OPTIONS: ''
+  PYTHONPATH: ''
+  PYTHONHOME: ''
+jobs:
+  resolve:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      plan_sha256: ${{ steps.plan.outputs.plan_sha256 }}
+      helper_commit: ${{ steps.plan.outputs.helper_commit }}
+      image_repository: ${{ steps.plan.outputs.image_repository }}
+      immutable_tag: ${{ steps.plan.outputs.immutable_tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check offline image policy
+        run: python3 -I -B container/test-image-ci.py
+      - name: Resolve official latest stable full packages and current universal base
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/image-inputs"
+          python3 -I -B container/resolve-latest.py --output "$RUNNER_TEMP/image-inputs/versions.json"
+          docker buildx imagetools inspect ghcr.io/openai/codex-universal:latest --format '{{json .Manifest}}' > "$RUNNER_TEMP/image-inputs/base-descriptor.json"
+      - name: Freeze source, helper, native, base and protocol identities
+        id: plan
+        run: |
+          python3 -I -B container/image-ci.py plan \
+            --native-lock "$RUNNER_TEMP/image-inputs/versions.json" \
+            --base-descriptor "$RUNNER_TEMP/image-inputs/base-descriptor.json" \
+            --helper-lock container/helper-source.json --commit "$GITHUB_SHA" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output "$RUNNER_TEMP/image-inputs/image-plan.json"
+          python3 -I -B container/image-ci.py outputs --plan "$RUNNER_TEMP/image-inputs/image-plan.json" --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-resolved-inputs
+          path: ${{ runner.temp }}/image-inputs/*.json
+          retention-days: 30
+          if-no-files-found: error
+  qualify:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: image-resolved-inputs
+          path: ${{ runner.temp }}/image-inputs
+      - name: Verify plan and qualify full native package with an empty account home
+        env:
+          PLAN_SHA256: ${{ needs.resolve.outputs.plan_sha256 }}
+          IMAGE_ARCH: ${{ matrix.arch }}
+        run: |
+          python3 -I -B container/image-ci.py outputs --plan "$RUNNER_TEMP/image-inputs/image-plan.json" --expected-sha256 "$PLAN_SHA256"
+          python3 -I -B scripts/runtime/update.py qualify --root "$RUNNER_TEMP/qualified-codex" \
+            --lock "$RUNNER_TEMP/image-inputs/versions.json" > "$RUNNER_TEMP/qualification-result.json"
+          python3 -I -B - "$RUNNER_TEMP/qualification-result.json" "$RUNNER_TEMP/qualification.json" <<'CHECK'
+          import json, os, pathlib, shutil, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert value['status'] in ('updated', 'current') and value['latestCheckSucceeded'] and value['selection']
+          assert json.loads(pathlib.Path(value['selection']['qualificationPath']).read_text())['platform'] == os.environ['IMAGE_ARCH']
+          shutil.copyfile(value['selection']['qualificationPath'], sys.argv[2])
+          CHECK
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: native-qualification-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/qualification-result.json
+            ${{ runner.temp }}/qualification.json
+          retention-days: 30
+          if-no-files-found: warn
+  publish-platform:
+    needs: [resolve, qualify]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'amd64' && (vars.TCR_IMAGE_AMD64_RUNNER || 'ubuntu-24.04') || (vars.TCR_IMAGE_ARM64_RUNNER || 'ubuntu-24.04-arm') }}
+    timeout-minutes: 240
+    env:
+      IMAGE_ARCH: ${{ matrix.arch }}
+      IMAGE_REPOSITORY: ${{ needs.resolve.outputs.image_repository }}
+      IMAGE_TAG: ${{ needs.resolve.outputs.immutable_tag }}
+      PLAN_SHA256: ${{ needs.resolve.outputs.plan_sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: lwyBZss8924d/ultrafast-atif-helper
+          ref: ${{ needs.resolve.outputs.helper_commit }}
+          path: _bundle-helper-source
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: image-resolved-inputs
+          path: ${{ runner.temp }}/image-inputs
+      - name: Verify plan and report actual native runner and storage
+        run: |
+          python3 -I -B container/image-ci.py outputs --plan "$RUNNER_TEMP/image-inputs/image-plan.json" --expected-sha256 "$PLAN_SHA256"
+          uname -m
+          df -h "$RUNNER_TEMP" /var/lib/docker
+          docker version
+          docker buildx version
+      - name: Build required universal image from frozen sources and native lock
+        run: >-
+          python3 -I -B container/image-ci.py build --plan "$RUNNER_TEMP/image-inputs/image-plan.json"
+          --source "$GITHUB_WORKSPACE" --helper-source "$GITHUB_WORKSPACE/_bundle-helper-source"
+          --work "$RUNNER_TEMP/image-build" --arch "$IMAGE_ARCH" --image task-checkpoint-record:checked
+          --output "$RUNNER_TEMP/image-build.json"
+      - name: Test actual image offline before any registry login or push
+        run: >-
+          python3 -I -B container/image-ci.py smoke --plan "$RUNNER_TEMP/image-inputs/image-plan.json"
+          --arch "$IMAGE_ARCH" --image task-checkpoint-record:checked --output "$RUNNER_TEMP/image-smoke.json"
+      - name: Authenticate only after the image passes
+        if: github.event_name == 'schedule' || inputs.publish
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Push tested image and record immutable digest
+        if: github.event_name == 'schedule' || inputs.publish
+        run: >-
+          python3 -I -B container/image-ci.py push-checked --plan "$RUNNER_TEMP/image-inputs/image-plan.json"
+          --smoke "$RUNNER_TEMP/image-smoke.json" --arch "$IMAGE_ARCH" --output "$RUNNER_TEMP/image-publication.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: image-platform-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/image-build.json
+            ${{ runner.temp }}/image-build/source-contexts.json
+            ${{ runner.temp }}/image-smoke.json
+            ${{ runner.temp }}/image-publication.json
+          retention-days: 90
+          if-no-files-found: warn
+  publish-index:
+    needs: [resolve, publish-platform]
+    if: github.event_name == 'schedule' || inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: image-resolved-inputs
+          path: ${{ runner.temp }}/image-inputs
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: image-platform-*
+          path: ${{ runner.temp }}/platforms
+      - name: Require both tested platform digests from the same plan
+        env:
+          PLAN_SHA256: ${{ needs.resolve.outputs.plan_sha256 }}
+        run: |
+          python3 -I -B container/image-ci.py outputs --plan "$RUNNER_TEMP/image-inputs/image-plan.json" --expected-sha256 "$PLAN_SHA256"
+          python3 -I -B container/image-ci.py index-plan --plan "$RUNNER_TEMP/image-inputs/image-plan.json" \
+            --receipt "$RUNNER_TEMP/platforms/image-platform-amd64/image-publication.json" \
+            --receipt "$RUNNER_TEMP/platforms/image-platform-arm64/image-publication.json" \
+            --output "$RUNNER_TEMP/image-index-plan.json"
+      - name: Authenticate the publication job
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Publish immutable multi-platform tag and move current
+        run: >-
+          python3 -I -B container/image-ci.py publish-index --index-plan "$RUNNER_TEMP/image-index-plan.json"
+          --output "$RUNNER_TEMP/image-index-observed.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: published-image-index
+          path: |
+            ${{ runner.temp }}/image-index-plan.json
+            ${{ runner.temp }}/image-index-observed.json
+          retention-days: 90
+          if-no-files-found: warn

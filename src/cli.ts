@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { Store } from "./store.ts";
 import { handleHook } from "./hooks.ts";
 import { drain, runService, workerOptions } from "./worker.ts";
@@ -14,7 +14,7 @@ import { agentActivationSchema } from "./agent-config.ts";
 import { agentHookOutput } from "./agent-hook.ts";
 
 const HELP={
-  name:"task-checkpoint-record",version:"0.1.0",schema_version:"task-checkpoint-record.help.v1",
+  name:"task-checkpoint-record",version:"0.2.0",schema_version:"task-checkpoint-record.help.v1",
   commands:{
     "config init":"--file NEW_JSON [--provider openrouter|typesafe]; new unified config, no credentials/state/auth effects",
     "config check":"--config JSON; validate and resolve explicit configuration, no credential or provider checks",
@@ -23,6 +23,10 @@ const HELP={
     "auth setup":"--config JSON --plan-sha256 SHA; create reviewed new profile only, never copy credentials",
     "auth login":"--config JSON; explicit official codex login --device-auth with dedicated CODEX_HOME, inherited terminal",
     "auth status":"--config JSON; official codex login status, no authentication-file reads by this wrapper",
+    "runtime status":"--root ABS_DIR, or --config JSON/--state ABS_DIR; local qualified runtime status without network or models",
+    "runtime plan":"same root options; inspect official latest stable release, no installation, models or login",
+    "runtime update":"same root options [--resume-latest true]; explicitly install and qualify official latest stable; an explicit rollback hold persists until resumed",
+    "runtime rollback":"same root options --version X.Y.Z; hold a retained qualified runtime until explicit resume; running sessions rotate only at a safe idle cycle",
     "schema":"binding|query|helper-page|agent-activation; JSON Schema without state creation",
     "init":"--state ABS_DIR; creates private SQLite state only",
     "bind":"--state ABS_DIR --file ABS_BINDING_JSON; immutable explicit task/session/source binding",
@@ -110,6 +114,21 @@ export async function main(argv:string[]):Promise<void>{
     if(option(args,"config-sha256")&&!option(args,"config"))fail("config_required_for_digest");
     const config=option(args,"config")?loadConfig(option(args,"config")!,option(args,"config-sha256")):undefined;
     if(command==="config check"){allowed(args,[]);if(!config)fail("config_required");output(checkConfigReport(config));return;}
+    if(command.startsWith("runtime ")){
+      if(!["runtime status","runtime plan","runtime update","runtime rollback"].includes(command))fail("unknown_command");
+      allowed(args,["root",...(command==="runtime update"?["resume-latest"]:command==="runtime rollback"?["version"]:[])]);
+      const resume=option(args,"resume-latest");if(resume!==undefined&&resume!=="true"&&resume!=="false")fail("invalid_boolean_option");
+      const state=option(args,"state")??config?.recorder.state_dir;
+      const root=absolute(option(args,"root")??config?.agent_service.runtime_update.root??(state?join(absolute(state),"codex-runtime"):fail("runtime_root_required")));
+      const {runRuntimeUpdateCommand,ensureLatestCodexRuntime}=await import("./runtime-update.ts");
+      const abort=new AbortController(),stop=()=>abort.abort();process.once("SIGTERM",stop);process.once("SIGINT",stop);
+      try{const options={root,checkIntervalMs:config?.agent_service.runtime_update.check_interval_ms,signal:abort.signal};
+        const report=command==="runtime update"?await ensureLatestCodexRuntime({...options,force:true,resumeLatest:resume==="true"})
+          :await runRuntimeUpdateCommand(command==="runtime status"?"status":command==="runtime plan"?"plan":"rollback",
+            {...options,...(command==="runtime rollback"?{rollbackVersion:option(args,"version",true)!}:{})});
+        output(report);if(report.status==="update_failed")process.exitCode=1;
+      }finally{process.off("SIGTERM",stop);process.off("SIGINT",stop);}return;
+    }
     if(command.startsWith("auth ")){
       if(!config)fail("config_required");
       if(command==="auth plan"){allowed(args,[]);output(authPlan(config));return;}

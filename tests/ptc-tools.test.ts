@@ -3,7 +3,7 @@ import { closeSync, mkdirSync, mkdtempSync, openSync, readSync, readdirSync, rea
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createCliPtcHelper, createCliPtcScorer, createPtcBudget, createPtcTools, validatePreparedPacketAdmission } from "../src/ptc-tools.ts";
+import { citationAlias, createCliPtcHelper, createCliPtcScorer, createPtcBudget, createPtcTools, validatePreparedPacketAdmission } from "../src/ptc-tools.ts";
 import type { PtcContentPolicy, PtcHelperAdapter, PtcOptions, PtcReceipt } from "../src/ptc-tools.ts";
 import type { AgentToolContext } from "../src/agent-runtime.ts";
 import type { NormalizedRecord } from "../src/types.ts";
@@ -103,6 +103,17 @@ test("query returns scoped opaque handles, exact fields and pagination without s
   expect(JSON.stringify(output)).not.toContain(s.source); expect(JSON.stringify(output)).not.toContain("SYNTHETIC_BODY");
   expect(s.stored[0]!.result_sha256).toBe(sha(canonical(output))); expect(s.stored[0]!.source_refs.length).toBe(1);
   expect(s.stored[0]!.helper?.execution.transport).toBe("synthetic_test_adapter");
+});
+test("PTC issues a short citation only with its exact persisted full evidence receipt",async()=>{
+  let persisted:PtcReceipt|undefined;
+  const s=setup({onReceipt:async receipt=>{await Bun.sleep(1);persisted=receipt;}});
+  const output=await s.call("tcr_query",{}),value=output.value as any;
+  expect(persisted?.status).toBe("completed");expect(value.evidence_ref).toMatch(/^ptc-evidence:[a-f0-9]{64}$/);
+  expect(value.citation_ref).toBe("cite:"+value.evidence_ref.slice("ptc-evidence:".length,"ptc-evidence:".length+16));
+  expect(value.citation_ref).toMatch(/^cite:[a-f0-9]{16}$/);expect(persisted!.evidence_ref).toBe(value.evidence_ref);
+  expect((persisted!.result!.value as any).citation_ref).toBe(value.citation_ref);
+  expect(persisted!.result_sha256).toBe(sha(canonical(output)));
+  expect(citationAlias("ptc:legacy-exact-ref")).toBeNull();
 });
 test("task/window/path/URL widening, unknown fields and invalid scalar filters fail before helper use", async () => {
   const s = setup();

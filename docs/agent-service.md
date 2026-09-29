@@ -66,6 +66,11 @@ history. Proposal, evidence and run links resolve through the selected store.
 Native thread/turn IDs, logical worker keys, source-native IDs, ATIF steps and OTel
 correlation remain distinct. An unavailable ID remains unavailable.
 
+For model reports, copy the short `citation_ref` from completed tool results or
+the worker `citation_refs` returned by `tcr_delegate`. The host accepts only a
+unique alias for evidence already stored in that worker or run and persists the
+full `evidence_ref`. An unissued or ambiguous alias cannot become a citation.
+
 Proposals are intermediate: `formal_owner_checkpoint` and `task_acceptance` are
 false. The owner reviews actual results and seals its own checkpoint and lineage.
 `agent verify` checks stored relationships and current session health; it does

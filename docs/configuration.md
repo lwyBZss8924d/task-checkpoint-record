@@ -22,9 +22,9 @@ native executable and dedicated home null until the operator selects them.
 | Section | Fields | Consumer |
 | --- | --- | --- |
 | `recorder` | `state_dir`, `helper_command`, `concurrency`, `max_jobs`, `timeout_ms`, `lease_ms`, `page_bytes`, `page_limit`, `stdout_bytes` | Recorder state commands and explicit `service once/run/start` |
-| `codex` | `executable`, `home`, `supervisor`, `semantic_worker`, `eval` | Explicit `auth` commands and `configuredAppServerOptions` / `runConfiguredAppServerTask` API |
+| `codex` | `executable`, `home`, optional `qualification_receipt`, `supervisor`, `semantic_worker`, `eval` | Explicit `auth` commands and configured native APIs; a pinned future version needs its verified receipt |
 | `scoring` | `provider`, `model`, `api_key_env`, `limits` | Helper's explicit `prepare-score` / `score-prepared` workflow |
-| `agent_service` | Native-turn/worker/tool/round ceilings, deadline and prepared-data policy | Explicit native-agent activation and service commands |
+| `agent_service` | `execution_mode`, `runtime_update`, native-turn/worker/tool/round ceilings, deadline and prepared-data policy | Explicit native-agent activation and service commands |
 
 The deterministic recorder worker extracts local metadata and does not launch a
 model because a `codex` or `scoring` section exists. The optional native model API
@@ -77,6 +77,12 @@ The optional `agent_service` section has finite defaults:
 
 ```json
 {
+  "execution_mode": "danger-full-access",
+  "runtime_update": {
+    "mode": "latest-stable",
+    "root": null,
+    "check_interval_ms": 14400000
+  },
   "concurrency": 2,
   "max_workers": 2,
   "max_native_turns": 3,
@@ -87,6 +93,71 @@ The optional `agent_service` section has finite defaults:
   "external_score_max_calls": 0
 }
 ```
+
+`execution_mode` controls the explicit native daemon's sandbox and defaults to
+`danger-full-access` with approval policy `never`. An operator can select
+`read-only`. The process config, thread request and each turn request use the
+same mode; a returned thread policy mismatch stops before a turn. Native
+App Server receives this policy through supported config/RPC fields, not TUI
+shortcut flags. The scoped PTC tool registry and prepared-input boundaries still
+apply. The standalone text API keeps its read-only default independently.
+
+`runtime_update.mode` defaults to `latest-stable`. The managed directory defaults
+to `<recorder.state_dir>/codex-runtime`; a non-null `root` is a literal config-relative
+or absolute directory owned by this service. `check_interval_ms` defaults to four
+hours and accepts one minute through one day. The first daemon cycle checks
+latest after startup acknowledgement, then checks only between serialized cycles
+at that interval. Active native calls keep their immutable versioned package.
+New versions require official stable-release metadata, complete package identity,
+paired executables, file inventory and the shipped protocol compatibility checks.
+An update rotates only verified idle sessions and keeps task budgets and epoch
+lineage. Latest-discovery/qualification failure stays visible as a stale/error
+observation; it is not a claim that the latest runtime was adopted.
+
+`runtime_update.mode:"pinned"` skips update discovery and uses the explicit
+`codex.executable`. Its future version must also supply `codex.qualification_receipt`.
+Configuration, status, auth and the standalone helper do not initiate updates.
+`agent status` includes bounded `runtime_updates` observations with selection,
+check time, latest-check status, stale state, failure and any adoption error.
+
+For a first installation, initialize configuration, run an explicit update and
+set `codex.executable` to the returned immutable selection before provisioning
+the dedicated authentication home. Keep `codex.home` separate from ordinary
+client profiles:
+
+```sh
+task-checkpoint-record runtime status --config "$PWD/task-checkpoint.json"
+task-checkpoint-record runtime plan --config "$PWD/task-checkpoint.json"
+task-checkpoint-record runtime update --config "$PWD/task-checkpoint.json"
+# Set codex.executable to selection.executable, codex.qualification_receipt to
+# selection.qualificationPath, and codex.home to the dedicated absolute home.
+task-checkpoint-record auth plan --config "$PWD/task-checkpoint.json"
+task-checkpoint-record auth setup --config "$PWD/task-checkpoint.json" --plan-sha256 REVIEWED_PLAN_SHA
+task-checkpoint-record auth login --config "$PWD/task-checkpoint.json"
+```
+
+These runtime commands also accept `--root ABS_DIR` without a recorder database.
+`status` reads local metadata only; `plan` discovers the official release without
+installing it; `update` explicitly installs and qualifies it. None logs in or
+launches a model. Latest-mode activation can leave `codex.executable` null after
+the dedicated account is provisioned, because selection occurs before model work.
+Existing authentication profiles are never rewritten by update or service startup.
+
+An explicit rollback selects a retained, qualified version and holds it until
+the operator resumes latest updates:
+
+```sh
+task-checkpoint-record runtime rollback --config "$PWD/task-checkpoint.json" --version RETAINED_VERSION
+task-checkpoint-record runtime status --config "$PWD/task-checkpoint.json"
+task-checkpoint-record runtime update --config "$PWD/task-checkpoint.json" --resume-latest true
+```
+
+The held state is reported as `held_not_latest`, not current/latest. The daemon
+adopts a changed selection at a safe idle boundary, verifies old-session closure
+and records a new linked epoch. It retains the same activation and consumed
+budgets; rollback never retries a consumed or interrupted model operation.
+Ordinary automatic checks and `runtime update` without `--resume-latest true`
+preserve the explicit hold.
 
 An activation freezes the resolved non-secret config, role models, task binding,
 prepared admissions and policy digest. Editing the original JSON cannot change

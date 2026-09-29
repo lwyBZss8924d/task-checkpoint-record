@@ -41,11 +41,31 @@ jobs:
         run: >-
           python3 scripts/distribution/package.py helper-context
           --source vendor/ultrafast-atif-helper --output "$RUNNER_TEMP/helper-context"
+      - name: Resolve the required native lock and universal base
+        id: image_plan
+        working-directory: ${{ runner.temp }}/unpacked
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/codex-lock"
+          python3 -I -B container/resolve-latest.py --output "$RUNNER_TEMP/codex-lock/versions.json"
+          docker buildx imagetools inspect ghcr.io/openai/codex-universal:latest --format '{{json .Manifest}}' > "$RUNNER_TEMP/codex-lock/base-descriptor.json"
+          python3 -I -B - <<'CHECK'
+          import json, os
+          assert json.load(open('container/helper-source.json'))['commit'] == os.environ['HELPER_COMMIT'], 'helper input must match reviewed source lock'
+          CHECK
+          python3 -I -B container/image-ci.py plan \
+            --native-lock "$RUNNER_TEMP/codex-lock/versions.json" \
+            --base-descriptor "$RUNNER_TEMP/codex-lock/base-descriptor.json" \
+            --helper-lock container/helper-source.json --commit "$GITHUB_SHA" --repository "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --output "$RUNNER_TEMP/codex-lock/image-plan.json"
+          python3 -I -B container/image-ci.py outputs --plan "$RUNNER_TEMP/codex-lock/image-plan.json" --github-output "$GITHUB_OUTPUT"
       - name: Build self-contained image
+        env:
+          CODEX_BASE: ${{ steps.image_plan.outputs.base_reference }}
         working-directory: ${{ runner.temp }}/unpacked
         run: >-
           docker buildx build --load --platform linux/amd64
           --build-context helper="$RUNNER_TEMP/helper-context"
+          --build-context codex-lock="$RUNNER_TEMP/codex-lock" --build-arg "CODEX_BASE=$CODEX_BASE"
           -t task-checkpoint-record:ci .
       - name: Unauthenticated no-network container checks
         run: |

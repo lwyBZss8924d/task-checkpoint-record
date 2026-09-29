@@ -73,7 +73,7 @@ marketplace ZIP into a durable versioned package directory. Use that extracted
 directory as the marketplace root, then select the current Codex profile explicitly:
 
 ```sh
-codex plugin marketplace add /absolute/task-checkpoint-tools-0.1.0-marketplace --json
+codex plugin marketplace add /absolute/task-checkpoint-tools-0.2.0-marketplace --json
 codex plugin add task-checkpoint-tools@task-checkpoint-tools --json
 codex plugin list --json
 ```
@@ -151,9 +151,10 @@ registry. Enable any desired release environment review rules in the repository.
 
 The recorder image derives from
 [`ghcr.io/openai/codex-universal`](https://github.com/openai/codex-universal).
-`container/versions.json` pins the observed image digest, Bun 1.3.14, Node 22 and
-the official [Codex 0.158.0 release](https://github.com/openai/codex/releases/tag/rust-v0.158.0)
-full package checksums for Linux amd64/arm64. Full packages preserve the matching
+`container/versions.json` records the bootstrap/runtime inputs and reviewed helper
+source pin. Automatic image builds resolve the latest official stable Codex
+release and current Codex-universal base digest into an exact build lock. Bun
+1.3.14 and Node 22 retain their declared toolchain pins. Full packages preserve the matching
 code-mode host, sandbox resources and package metadata. Build-time installation
 never replaces a host binary. Image/asset resolution is evidence about inputs;
 container execution and authenticated model compatibility have separate receipts.
@@ -165,8 +166,21 @@ With the two public source checkouts side by side:
 ```sh
 python3 scripts/distribution/package.py helper-context \
   --source ../ultrafast-atif-helper --output /tmp/task-checkpoint-helper-context
+mkdir /tmp/task-checkpoint-image-inputs
+python3 -I -B container/resolve-latest.py \
+  --output /tmp/task-checkpoint-image-inputs/versions.json
+docker buildx imagetools inspect ghcr.io/openai/codex-universal:latest \
+  --format '{{json .Manifest}}' > /tmp/task-checkpoint-image-inputs/base-descriptor.json
+python3 -I -B container/image-ci.py plan \
+  --native-lock /tmp/task-checkpoint-image-inputs/versions.json \
+  --base-descriptor /tmp/task-checkpoint-image-inputs/base-descriptor.json \
+  --helper-lock container/helper-source.json --commit "$(git rev-parse HEAD)" \
+  --repository lwyBZss8924d/task-checkpoint-record --run-id 0 --run-attempt 1 \
+  --output /tmp/task-checkpoint-image-inputs/image-plan.json
 docker buildx build --load \
   --build-context helper=/tmp/task-checkpoint-helper-context \
+  --build-context codex-lock=/tmp/task-checkpoint-image-inputs \
+  --build-arg "CODEX_BASE=$(python3 -I -B -c 'import json; print(json.load(open("/tmp/task-checkpoint-image-inputs/image-plan.json"))["base"]["reference"])')" \
   -t task-checkpoint-record:local .
 docker run --rm --network none task-checkpoint-record:local --help
 docker run --rm --network none task-checkpoint-record:local codex --version
@@ -179,13 +193,13 @@ state or unrelated checkouts.
 
 The first command refuses an existing destination and records every copied helper
 input digest. The primary `.dockerignore` is deny-by-default and only admits the
-runtime build inputs. Normal builds use the frozen Codex release. The opt-in
-`codex-compatibility.yml` workflow resolves the latest official stable release into
-a separate temporary lock and checks its version/help/protocol-schema surface.
-It checks 18 used RPC schema files and 113 structural field fragments, and rejects
-an unreviewed version before reporting success. The version authority is the
-adapter's `SUPPORTED_CODEX_VERSIONS` tuple; contract drift also fails. That result
-is not an authenticated live-model evaluation and does not rewrite pins.
+runtime build inputs. The compatibility workflow and automatic image pipeline
+qualify the selected stable release against the bundled protocol contract before
+publication. The contract lists the exact used schema files and structural checks;
+package/initialization/protocol receipts retain their own verification scope.
+They do not establish authenticated model availability. See
+[runtime updates](runtime-updates.md) and [image updates](image-updates.md) for
+the schedule, exact image metadata, update failures and rollback.
 
 ## Persistent authentication and local data
 
@@ -193,7 +207,8 @@ Containers run as UID/GID 10001. Use a dedicated persistent volume for
 `CODEX_HOME=/var/lib/task-checkpoint-codex`, and another for
 `TASK_CHECKPOINT_RECORD_STATE=/var/lib/task-checkpoint-record`. The image contains
 only public configuration templates: supervisor `gpt-6-sol`/`medium`, ChatGPT
-authentication, read-only sandbox, no shell tools, recursive hooks or telemetry.
+authentication, unattended `danger-full-access` execution with approval `never`,
+scoped host tools and recursive Hooks/telemetry disabled.
 The fixed container example is
 `/opt/task-checkpoint-record/config/task-checkpoint.container.example.json`. It
 selects the contained Codex/helper executables and the two dedicated volume paths.

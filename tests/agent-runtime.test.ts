@@ -2,7 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, chmod, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createAgentSession, runAgentTurn, AgentRuntimeError, type AgentSession, type AgentSessionOptions, type AgentTool } from "../src/agent-runtime.ts";
+import { createAgentSession, runAgentTurn, AgentRuntimeError, AgentToolArgumentsError, type AgentSession, type AgentSessionOptions, type AgentTool } from "../src/agent-runtime.ts";
+import { fixtureQualifiedRuntime } from "./fixture-qualified-runtime.ts";
 
 const roots: string[] = [], sessions: AgentSession[] = [];
 afterEach(async () => {
@@ -23,13 +24,13 @@ const request = () => ({ input: { dataClass: "synthetic" as const, text: "Inspec
     if (!value || typeof value !== "object" || typeof (value as any).ok !== "boolean" || !Number.isSafeInteger((value as any).sequence)) throw Error("invalid");
     return value as { ok: boolean; sequence: number };
   } });
-async function fixture(mode = "tool") {
+async function fixture(mode = "tool", userAgent = "task_checkpoint_record_agent/0.158.0 (synthetic)") {
   const root = await mkdtemp(join(tmpdir(), "agent-runtime-test-")); roots.push(root);
   const codexHome = join(root, ".codex-task-checkpoint-record"); await mkdir(codexHome);
   const executable = join(root, "fake-codex"); const log = join(root, "wire.jsonl");
   const script = `#!${process.execPath}\n` + String.raw`
 import {appendFileSync} from 'node:fs'; import {createInterface} from 'node:readline'; import {spawn} from 'node:child_process';
-const mode=MODE,log=LOG,send=x=>process.stdout.write(JSON.stringify(x)+'\n');
+const mode=MODE,log=LOG,userAgent=USER_AGENT,send=x=>process.stdout.write(JSON.stringify(x)+'\n');
 const thread='native-resident-thread';let initialized=false,sequence=0,model,effort;
 const pending=new Map();
 function final(turn,success=true,extraItems=[]){
@@ -41,14 +42,14 @@ function final(turn,success=true,extraItems=[]){
  if(mode==='late-conflict')setTimeout(()=>send({method:'turn/completed',params:{threadId:thread,turn:{id:turn,status:'failed',items:[]}}}),30);
 }
 createInterface({input:process.stdin}).on('line',line=>{
- const m=JSON.parse(line);appendFileSync(log,JSON.stringify(m)+'\n');
- if(m.method==='initialize'){send({id:m.id,result:{userAgent:'task_checkpoint_record_agent/0.158.0 (synthetic)'}});return;}
+ const m=JSON.parse(line);appendFileSync(log,JSON.stringify({...m,...(m.method==='initialize'?{argv:process.argv.slice(2)}:{})})+'\n');
+ if(m.method==='initialize'){send({id:m.id,result:{userAgent}});return;}
  if(m.method==='initialized'){initialized=true;return;}
  if(!initialized){send({id:m.id,error:{code:-1,message:'initialization ordering'}});return;}
  if(m.method==='config/read'){send({id:m.id,result:{config:{mcp_servers:mode==='mcp-config'?{unsafe:{}}:{}}}});return;}
  if(m.method==='account/read'){send({id:m.id,result:{account:mode==='no-auth'?null:{type:'chatgpt'},requiresOpenaiAuth:true}});return;}
  if(m.method==='model/list'){send({id:m.id,result:{data:mode==='no-model'?[]:['gpt-6-sol','gpt-6-luna'].map(model=>({model,supportedReasoningEfforts:[{reasoningEffort:'medium'},{reasoningEffort:'high'}]})),nextCursor:null}});return;}
- if(m.method==='thread/start'){model=m.params.model;effort=m.params.config.model_reasoning_effort;send({id:m.id,result:{thread:{id:thread,sessionId:'native-session',ephemeral:false},model,reasoningEffort:effort,modelProvider:'openai',cwd:m.params.cwd,approvalPolicy:'never',approvalsReviewer:'user',sandbox:{type:'readOnly',networkAccess:false}}});return;}
+ if(m.method==='thread/start'){model=m.params.model;effort=m.params.config.model_reasoning_effort;const selected=m.params.sandbox==='danger-full-access',full=mode==='wrong-sandbox'?!selected:selected;send({id:m.id,result:{thread:{id:thread,sessionId:'native-session',ephemeral:false},model,reasoningEffort:effort,modelProvider:'openai',cwd:m.params.cwd,approvalPolicy:mode==='wrong-approval'?'on-request':'never',approvalsReviewer:'user',sandbox:full?{type:'dangerFullAccess'}:{type:'readOnly',networkAccess:mode==='wrong-network'}}});return;}
  if(m.method==='turn/start'){
   const turn='native-turn-'+(++sequence);const reply=()=>send({id:m.id,result:{turn:{id:turn,status:'inProgress',items:[]}}});
   if(mode==='wait'){reply();return;}
@@ -77,13 +78,52 @@ createInterface({input:process.stdin}).on('line',line=>{
   send({method:'item/completed',params:{threadId:thread,turnId:p.turn,item}});final(p.turn,m.result.success);
  }
 });
-`.replace("MODE", JSON.stringify(mode)).replace("LOG", JSON.stringify(log));
+`.replace("MODE", JSON.stringify(mode)).replace("LOG", JSON.stringify(log)).replace("USER_AGENT", JSON.stringify(userAgent));
   await writeFile(executable, script); await chmod(executable, 0o700);
   const options: AgentSessionOptions = { codexExecutable: executable, codexHome, cwd: root, tools: [tool()],
     limits: { startupMs: 1000, deadlineMs: 2000, sessionMs: 10000, shutdownMs: 50, toolShutdownMs: 100, toolDeadlineMs: 500 } };
   return { root, log, options, messages: async () => (await readFile(log, "utf8")).trim().split("\n").map(x => JSON.parse(x)) };
 }
 async function create(options: AgentSessionOptions) { const session = await createAgentSession(options); sessions.push(session); return session; }
+
+test.each([undefined,"read-only","danger-full-access"] as const)("native agent execution mode %s reaches process, thread and every turn",async mode=>{
+  const f=await fixture("tool","task_checkpoint_record_agent/0.159.0 (synthetic)");
+  const s=await create({...f.options,...(mode?{executionMode:mode}:{})}),expected=mode??"read-only";
+  const first=await s.runTurn(request()),second=await s.runTurn(request());
+  expect(s.identity.executionMode).toBe(expected);expect(s.identity.protocolVersion).toBe("codex-0.159.0");
+  expect(first.runtime.executionMode).toBe(expected);expect(second.runtime.executionMode).toBe(expected);
+  const calls=await f.messages(),argv=calls[0].argv;
+  expect(argv).toContain(`sandbox_mode=${JSON.stringify(expected)}`);expect(argv).toContain('approval_policy="never"');
+  expect(argv).not.toContain("--sandbox");expect(argv).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+  expect(calls.find(c=>c.method==='thread/start').params).toMatchObject({approvalPolicy:"never",sandbox:expected,config:{sandbox_mode:expected}});
+  for(const call of calls.filter(c=>c.method==='turn/start'))expect(call.params).toMatchObject({approvalPolicy:"never",sandboxPolicy:expected==='danger-full-access'?{type:"dangerFullAccess"}:{type:"readOnly",networkAccess:false}});
+});
+test.each(["read-only","danger-full-access"] as const)("native service rejects changed returned %s policy before a turn",async executionMode=>{
+  for(const mode of ["wrong-sandbox","wrong-approval"]){const f=await fixture(mode);await expect(create({...f.options,executionMode})).rejects.toMatchObject({code:"agent_runtime_policy_not_honored"});expect((await f.messages()).some(c=>c.method==='turn/start')).toBe(false);}
+});
+test("full access preserves explicit tool/data admission and refuses unqualified future versions",async()=>{
+  const f=await fixture("unknown-tool");const s=await create({...f.options,executionMode:"danger-full-access"});
+  await expect(s.runTurn(request())).rejects.toBeInstanceOf(AgentRuntimeError);
+  const unknown=await fixture("tool","task_checkpoint_record_agent/0.999.0 (synthetic)");
+  await expect(create({...unknown.options,executionMode:"danger-full-access"})).rejects.toMatchObject({code:"unsupported_codex_version"});
+  expect((await unknown.messages()).map(c=>c.method)).toEqual(["initialize"]);
+});
+test("future native agent version requires the exact qualified package and matching handshake",async()=>{
+  const f=await fixture("tool","task_checkpoint_record_agent/0.999.0 (synthetic)"),qualified=fixtureQualifiedRuntime(f.options.codexExecutable);
+  const s=await create({...f.options,codexExecutable:qualified.executable,qualificationPath:qualified.qualificationPath,executionMode:"danger-full-access"});
+  const result=await s.runTurn(request());expect(result.runtime.protocolVersion).toBe("codex-0.999.0");
+  expect(result.runtime.qualification).toEqual(s.identity.qualification);expect(result.runtime.qualification?.version).toBe("0.999.0");
+  expect(result.runtime.qualification?.executableSha256).toMatch(/^[a-f0-9]{64}$/);expect(result.runtime.qualification?.qualificationSha256).toMatch(/^[a-f0-9]{64}$/);
+  const wrong=await fixture(),wrongQualified=fixtureQualifiedRuntime(wrong.options.codexExecutable);
+  await expect(create({...wrong.options,codexExecutable:wrongQualified.executable,qualificationPath:wrongQualified.qualificationPath})).rejects.toMatchObject({code:"runtime_qualification_version_mismatch"});
+  expect((await wrong.messages()).map(c=>c.method)).toEqual(["initialize"]);
+});
+test("modified qualified native bytes fail before the process starts",async()=>{
+  const f=await fixture("tool","task_checkpoint_record_agent/0.999.0 (synthetic)"),qualified=fixtureQualifiedRuntime(f.options.codexExecutable);
+  await writeFile(qualified.executable,(await readFile(qualified.executable,"utf8"))+"\n// changed synthetic executable\n");
+  await expect(create({...f.options,codexExecutable:qualified.executable,qualificationPath:qualified.qualificationPath})).rejects.toMatchObject({code:"runtime_package_changed"});
+  await expect(readFile(f.log)).rejects.toMatchObject({code:"ENOENT"});
+});
 
 test.each(["tool", "early"])("%s: resident thread handles validated tools across two separate turns", async mode => {
   const f = await fixture(mode); const s = await create(f.options); const pid = s.identity.pid;
@@ -115,6 +155,25 @@ test("invalid arguments return bounded tool failure without executing handler", 
   const t = tool(); t.execute = () => { executed = true; throw Error("should not run"); };
   const s = await create({ ...f.options, tools: [t] }); const result = await s.runTurn(request());
   expect(executed).toBe(false); expect(result.output.ok).toBe(false); expect(result.toolReceipts[0].status).toBe("arguments_rejected");
+});
+test("trusted argument corrections are bounded and returned as invalid_arguments without executing the handler",async()=>{
+  const f=await fixture("bad-args");let executed=false;const t=tool();
+  const hint="Omit record_handles for the current window, or supply a nonempty list. Empty [] is invalid; no workers were dispatched.";
+  t.validateArguments=()=>{throw new AgentToolArgumentsError(hint);};t.execute=()=>{executed=true;throw Error("must_not_execute");};
+  const s=await create({...f.options,tools:[t]});const result=await s.runTurn(request());
+  expect(executed).toBe(false);expect(result.toolReceipts[0].status).toBe("arguments_rejected");
+  const reply=(await f.messages()).find(m=>m.result?.contentItems);
+  expect(reply.result.success).toBe(false);expect(JSON.parse(reply.result.contentItems[0].text)).toEqual({data_class:"metadata_only",value:{error:"invalid_arguments",hint}});
+  expect(Buffer.byteLength(hint)).toBeLessThanOrEqual(512);
+  expect(()=>new AgentToolArgumentsError("x".repeat(513))).toThrow("invalid_tool_argument_hint");
+  expect(()=>new AgentToolArgumentsError("unsafe\ncontent")).toThrow("invalid_tool_argument_hint");
+});
+test("arbitrary validator errors do not leak their message into the native argument reply",async()=>{
+  const f=await fixture("bad-args"),t=tool();t.validateArguments=()=>{throw Error("SYNTHETIC_PRIVATE_EXCEPTION_DETAIL");};
+  const s=await create({...f.options,tools:[t]});await s.runTurn(request());
+  const reply=(await f.messages()).find(m=>m.result?.contentItems);
+  expect(JSON.parse(reply.result.contentItems[0].text).value).toEqual({error:"invalid_arguments"});
+  expect(reply.result.contentItems[0].text).not.toContain("SYNTHETIC_PRIVATE_EXCEPTION_DETAIL");
 });
 test.each(["unknown-tool", "approval", "cross-thread", "cross-turn", "namespace", "duplicate-call", "conflict"])("%s poisons and closes the native session", async mode => {
   const f = await fixture(mode); const s = await create(f.options);

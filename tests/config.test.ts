@@ -76,10 +76,12 @@ describe("one explicit portable config",()=>{
   });
   test("optional agent policy is inert, finite and coherent before activation",()=>{
     const root=temporary(),config=parseConfig({schema_version:CONFIG_VERSION},root);
-    expect(config.agent_service).toEqual({concurrency:2,max_workers:2,max_native_turns:3,max_tool_calls:64,deadline_ms:180000,max_rounds:2,data_policy:"metadata_only",external_score_max_calls:0});
+    expect(config.agent_service).toEqual({execution_mode:"danger-full-access",runtime_update:{mode:"latest-stable",root:null,check_interval_ms:14400000},concurrency:2,max_workers:2,max_native_turns:3,max_tool_calls:64,deadline_ms:180000,max_rounds:2,data_policy:"metadata_only",external_score_max_calls:0});
     expect(existsSync(config.recorder.state_dir)).toBe(false);
     expect(parseConfig({schema_version:CONFIG_VERSION,agent_service:{max_workers:32,concurrency:32,max_native_turns:33,max_tool_calls:256,deadline_ms:300000,max_rounds:32,data_policy:"prepared_fragments",external_score_max_calls:1}},root).agent_service.max_workers).toBe(32);
-    for(const agent_service of [{concurrency:33},{max_workers:33},{max_native_turns:34},{max_tool_calls:257},{deadline_ms:300001},{max_rounds:33},{external_score_max_calls:2},{max_workers:3},{concurrency:3},{data_policy:"owner_selected_source"},{prepared_packets:[]},{enabled:true},{max_model_calls:3}])
+    const explicit=parseConfig({schema_version:CONFIG_VERSION,agent_service:{execution_mode:"read-only",runtime_update:{mode:"pinned",root:"./managed",check_interval_ms:60000}}},root);
+    expect(explicit.agent_service.execution_mode).toBe("read-only");expect(explicit.agent_service.runtime_update).toEqual({mode:"pinned",root:join(root,"managed"),check_interval_ms:60000});
+    for(const agent_service of [{execution_mode:"workspace-write"},{execution_mode:null},{runtime_update:{mode:"latest"}},{runtime_update:{check_interval_ms:0}},{runtime_update:{root:"../shared"}},{runtime_update:{endpoint:"https://example.invalid"}},{concurrency:33},{max_workers:33},{max_native_turns:34},{max_tool_calls:257},{deadline_ms:300001},{max_rounds:33},{external_score_max_calls:2},{max_workers:3},{concurrency:3},{data_policy:"owner_selected_source"},{prepared_packets:[]},{enabled:true},{max_model_calls:3}])
       expect(()=>parseConfig({schema_version:CONFIG_VERSION,agent_service},root)).toThrow(ConfigurationError);
   });
   test("expected config digest binds the same bounded bytes before parsing or state mutation",()=>{
@@ -136,7 +138,7 @@ describe("dedicated native authentication front door",()=>{
   test("plan-bound new-only setup preserves ordinary/existing profiles",()=>{
     const root=temporary(),executable=fake(root),home=join(root,"dedicated");
     const config=parseConfig({...configTemplate(),codex:{executable,home,supervisor:{model:"gpt-6-luna",effort:"high"}}},root);
-    const plan=authPlan(config);expect(existsSync(home)).toBe(false);expect(plan.config_text).toContain('model = "gpt-6-luna"');
+    const plan=authPlan(config);expect(existsSync(home)).toBe(false);expect(plan.config_text).toContain('model = "gpt-6-luna"');expect(plan.config_text).toContain('sandbox_mode = "danger-full-access"');
     expect(()=>setupAuth(config,"0".repeat(64))).toThrow("config_auth_plan_changed");
     setupAuth(config,plan.plan_sha256);expect(lstatSync(home).mode&0o777).toBe(0o700);expect(lstatSync(join(home,"config.toml")).mode&0o777).toBe(0o600);
     const before=readFileSync(join(home,"config.toml"));expect(()=>setupAuth(config,plan.plan_sha256)).toThrow("config_auth_setup_requires_empty_home");expect(readFileSync(join(home,"config.toml"))).toEqual(before);

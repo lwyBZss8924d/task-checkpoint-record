@@ -14,7 +14,7 @@
     "stdout_bytes": 2097152
   },
   "codex": {
-    "executable": "/opt/codex-runtime/bin/codex",
+    "executable": null,
     "home": "/var/lib/task-checkpoint-codex",
     "supervisor": {
       "model": "gpt-6-sol",
@@ -27,7 +27,8 @@
     "eval": {
       "model": "gpt-6-luna",
       "effort": "high"
-    }
+    },
+    "qualification_receipt": null
   },
   "scoring": {
     "provider": "openrouter",
@@ -40,6 +41,12 @@
     }
   },
   "agent_service": {
+    "execution_mode": "danger-full-access",
+    "runtime_update": {
+      "mode": "latest-stable",
+      "root": null,
+      "check_interval_ms": 14400000
+    },
     "concurrency": 2,
     "max_workers": 2,
     "max_native_turns": 3,

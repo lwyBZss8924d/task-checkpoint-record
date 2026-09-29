@@ -9,33 +9,33 @@
     },
     {
       "destination": "references/config/codex-service.toml",
-      "projected_sha256": "e0c601e406ba3dc8b1a637538ed969169003c3d4425f94c6e42a378315b27fc0",
+      "projected_sha256": "f7f0664360e6b9df7b485469035f88e11f0eaa9fbfc910aec8da853c17124cdd",
       "source": "config/codex-service.toml",
-      "source_sha256": "e0c601e406ba3dc8b1a637538ed969169003c3d4425f94c6e42a378315b27fc0"
+      "source_sha256": "f7f0664360e6b9df7b485469035f88e11f0eaa9fbfc910aec8da853c17124cdd"
     },
     {
       "destination": "references/config/task-checkpoint.config.schema.json",
-      "projected_sha256": "8743426fcf25c96e41f0a4b6a88c46812cb10c077df3c71128c0f3300c06f506",
+      "projected_sha256": "12428213d6c7e1de0f6fee69bc9af9bcc4dd827eeca70f9201b2448cafe859ff",
       "source": "config/task-checkpoint.config.schema.json",
-      "source_sha256": "8743426fcf25c96e41f0a4b6a88c46812cb10c077df3c71128c0f3300c06f506"
+      "source_sha256": "12428213d6c7e1de0f6fee69bc9af9bcc4dd827eeca70f9201b2448cafe859ff"
     },
     {
       "destination": "references/config/task-checkpoint.container.example.json",
-      "projected_sha256": "c5aa22f81e5768a629f3968422893c878f1cb598b9be4788f50381877853ac43",
+      "projected_sha256": "ba5bd5ea2103e87923873a086d6463a21265944751f9dc85178b3dbe9ed2ff90",
       "source": "config/task-checkpoint.container.example.json",
-      "source_sha256": "c5aa22f81e5768a629f3968422893c878f1cb598b9be4788f50381877853ac43"
+      "source_sha256": "ba5bd5ea2103e87923873a086d6463a21265944751f9dc85178b3dbe9ed2ff90"
     },
     {
       "destination": "references/config/task-checkpoint.example.json",
-      "projected_sha256": "fe38723c81b1ea6e078f617d589bf2d8607db6f7c2c114a289a567ee597bcb08",
+      "projected_sha256": "07ef1525dfae2bb05da6ba0c2030d81b1892676df2010e49351a95d2cc440d8b",
       "source": "config/task-checkpoint.example.json",
-      "source_sha256": "fe38723c81b1ea6e078f617d589bf2d8607db6f7c2c114a289a567ee597bcb08"
+      "source_sha256": "07ef1525dfae2bb05da6ba0c2030d81b1892676df2010e49351a95d2cc440d8b"
     },
     {
       "destination": "references/config/task-checkpoint.typesafe.example.json",
-      "projected_sha256": "64482bc6fa01f0fa2428d1ad50b68d592dc2da2c9d78ea3f88766bbd9770f97a",
+      "projected_sha256": "12fdcc7b4b2e4e53ca67ccb2d6aafc035b26878c763cc7a411da143a84b92796",
       "source": "config/task-checkpoint.typesafe.example.json",
-      "source_sha256": "64482bc6fa01f0fa2428d1ad50b68d592dc2da2c9d78ea3f88766bbd9770f97a"
+      "source_sha256": "12fdcc7b4b2e4e53ca67ccb2d6aafc035b26878c763cc7a411da143a84b92796"
     },
     {
       "destination": "references/docs/adapters-roadmap.md",
@@ -45,27 +45,27 @@
     },
     {
       "destination": "references/docs/agent-runtime.md",
-      "projected_sha256": "a8370808e9b05318936fa22a68255650a618951c18f224bcb68988042255f8bd",
+      "projected_sha256": "d27b244232f42ac7307763dd1857c418d8327967d7ad93fc6c50c2195cbba90d",
       "source": "docs/agent-runtime.md",
-      "source_sha256": "74760639a1b64c87d71bb079b08664a18723430f159dbcb1f1d4efa5b149791a"
+      "source_sha256": "9df14bc2799e255a238b8ea3acfa2a41e0287526ea2b9d2ab5e3f8cd8b96ba47"
     },
     {
       "destination": "references/docs/agent-service.md",
-      "projected_sha256": "1c0358e88e234c212896cd09d6ca0355bf806dd36f34c14a66ea99f97625c100",
+      "projected_sha256": "68b5d987a04fb5665a8747b9c38d90a5c8f3a61acedb7a3f3052649f4f825b04",
       "source": "docs/agent-service.md",
-      "source_sha256": "cb7d06f75d3c609c584aca9bd2083f07e68899e1a8212c8ff429cb596daef2c7"
+      "source_sha256": "fcc1b54b5e0afce03912d30aff349d6489099c3962af10336eb6f2d7e182b0c6"
     },
     {
       "destination": "references/docs/agent-supervisor-plan.md",
-      "projected_sha256": "c4b86a8fa66a60d268c4f0513cdfbd57aeb59e16fd6004758bf6259027987cfd",
+      "projected_sha256": "e91798163175e08707a6e760e876d6a9f21d0e237ce71905a06c59a8e8191076",
       "source": "docs/agent-supervisor-plan.md",
-      "source_sha256": "c2f508b26eb9c7f2d04cb2699968524d3744c931d64035252dbe76cabaad13b2"
+      "source_sha256": "4517eb8de70706237bb5207d86a83f327127586cd0cc957f3fa3720a2c3c39f7"
     },
     {
       "destination": "references/docs/app-server-runtime.md",
-      "projected_sha256": "e7bbcd7afa04d7b44c45459b10ea9972e22c1dcb5f83ccfa5eaa2d5a17729ddf",
+      "projected_sha256": "3b307a272ab20b701aa17a830d7b358666801d4ad6fd41f464840b04bef4ffbb",
       "source": "docs/app-server-runtime.md",
-      "source_sha256": "f19dd33223c0a3d6be9d9bafac4cfad08e2bf127782276a7496be5df46b91b6d"
+      "source_sha256": "d02a22cc1f19acc2961256cd1a3468387f1d4f65d306bb304a42eaf3a929df06"
     },
     {
       "destination": "references/docs/architecture.md",
@@ -87,15 +87,15 @@
     },
     {
       "destination": "references/docs/configuration.md",
-      "projected_sha256": "c246321426e306fc6014db1339ececced93d2357db3dbbe6c3472ddadc849f49",
+      "projected_sha256": "e09be976e8beb7c3d4001a8d8e313dc9ed1ab7a393dc2d36776b1a33fcb70edd",
       "source": "docs/configuration.md",
-      "source_sha256": "ebc1c233ffc37315395ab079795bee3530fb8d11439b66e9845957e7940250f4"
+      "source_sha256": "3187e17b0e201725c46809720d14d63c92197def4c03cd88fa505711c4a627ac"
     },
     {
       "destination": "references/docs/distribution.md",
-      "projected_sha256": "843051d4c112a2987a6e4f00a66b34a923ae0d931d488e1d3a7d8cdb9eecf934",
+      "projected_sha256": "065921c64e75ab8e31ce0b6bfd029611415c8d223a23dce53b0102330b0c6b88",
       "source": "docs/distribution.md",
-      "source_sha256": "22623642f99ba633a4599e17ae44467d0e33323482dea47155203d44f569a90d"
+      "source_sha256": "5fc6d68a0bb357f99d4e6919ae319bcbb93daf5110397873bd8d479528b3613e"
     },
     {
       "destination": "references/docs/engineering-lessons.md",
@@ -110,6 +110,12 @@
       "source_sha256": "30ea90c9f38c4e765334f85b80c4ad32dc63800ad564e44c49d3f925d0e03d6e"
     },
     {
+      "destination": "references/docs/image-updates.md",
+      "projected_sha256": "7f091f68d42464cb24c18b1c6a5340959702c267610676d603a88b5d2008265e",
+      "source": "docs/image-updates.md",
+      "source_sha256": "c524f21c8dde9d740b9287af67a93dd61c84977e52200eeaf7c28156a01da5ab"
+    },
+    {
       "destination": "references/docs/implementation-plan.md",
       "projected_sha256": "5d1ad30c08d7c94ccc77dead110be4b1665500b99058d52e54cb6b5e24cbdc68",
       "source": "docs/implementation-plan.md",
@@ -120,6 +126,12 @@
       "projected_sha256": "19dfa8cf5e84321dc4e73b088cf467f2b22b52a6760c41e468cc52602da7f418",
       "source": "docs/installation.md",
       "source_sha256": "14476fc469fe1a1c7daba6ae57edc5fba738db9fa8dc6fe886403ab60c6c658a"
+    },
+    {
+      "destination": "references/docs/runtime-updates.md",
+      "projected_sha256": "07bcb9aca67ff89372ff05bf8c33c72e63623d885cc9e3e921375157119c03f2",
+      "source": "docs/runtime-updates.md",
+      "source_sha256": "08a12df2e66290d409f8fb28983a0773e28273e81bfede5c6c4a8c1ebef80908"
     }
   ],
   "generator": "scripts/distribution/skill-docs.py",

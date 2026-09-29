@@ -102,6 +102,18 @@
       "kind": "context",
       "path": "adapters-roadmap.md",
       "when": "Check publication states and the Pi package extension TODO"
+    },
+    {
+      "id": "runtime-updates",
+      "kind": "context",
+      "path": "runtime-updates.md",
+      "when": "Inspect official stable runtime selection, automatic updates, native execution policy and rollback"
+    },
+    {
+      "id": "image-updates",
+      "kind": "context",
+      "path": "image-updates.md",
+      "when": "Inspect automatic Codex-universal image builds, exact source/runtime pins and publication evidence"
     }
   ]
 }

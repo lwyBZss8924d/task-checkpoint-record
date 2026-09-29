@@ -10,6 +10,10 @@ spec.loader.exec_module(protocol)
 
 
 class ProtocolBoundaryTests(unittest.TestCase):
+    def test_json_integral_float_and_integer_are_equivalent_without_boolean_coercion(self):
+        self.assertEqual(protocol.canonical({'minimum': 0.0}), protocol.canonical({'minimum': 0}))
+        self.assertNotEqual(protocol.canonical({'minimum': False}), protocol.canonical({'minimum': 0}))
+
     def test_boolean_and_numeric_const_are_distinct(self):
         contract = {'file': 'synthetic', 'required': [], 'checks': [{'pointer': '/properties/x', 'equals': {'const': 0}}]}
         with self.assertRaisesRegex(ValueError, 'used_surface_changed'):

@@ -1,6 +1,6 @@
 {
   "name": "task-checkpoint-record",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local task checkpoints, bounded native supervision, helper tools and exact recall",
   "type": "module",
   "bin": {
@@ -51,6 +51,7 @@
     "./agent-config": "./src/agent-config.ts",
     "./agent-service": "./src/supervisor.ts",
     "./agent-store": "./src/supervisor-store.ts",
-    "./ptc-tools": "./src/ptc-tools.ts"
+    "./ptc-tools": "./src/ptc-tools.ts",
+    "./runtime-update": "./src/runtime-update.ts"
   }
 }

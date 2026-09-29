@@ -103,26 +103,28 @@ class ClientPluginBoundaries(unittest.TestCase):
 
     def test_current_native_overlay_contracts_and_no_timeout_boolean(self):
         repo = Path(__file__).resolve().parents[2]
+        version = json.loads((repo / 'package.json').read_text())['version']
         paths = [p for p in (repo / 'integrations/plugins').rglob('*') if p.is_file()]
         payload = {p.relative_to(repo).as_posix(): (p.read_bytes(), 0o644) for p in paths}
         for name in ('codex', 'claude'):
-            overlay = client.overlay_files(name, payload, '0.1.0')
+            overlay = client.overlay_files(name, payload, version)
             self.assertIn('hooks/hooks.json', overlay)
         path = 'integrations/plugins/codex/task-checkpoint-record/hooks/hooks.json'
         hooks = json.loads(payload[path][0]); hooks['hooks']['Stop'][0]['hooks'][0]['timeout'] = True
         payload[path] = (json.dumps(hooks).encode(), 0o644)
         with self.assertRaisesRegex(ValueError, 'client_hook_not_bounded_command'):
-            client.overlay_files('codex', payload, '0.1.0')
+            client.overlay_files('codex', payload, version)
 
     def test_expected_markers_do_not_authorize_an_extra_shell_action(self):
         repo = Path(__file__).resolve().parents[2]
+        version = json.loads((repo / 'package.json').read_text())['version']
         payload = {p.relative_to(repo).as_posix(): (p.read_bytes(), 0o644)
                    for p in (repo / 'integrations/plugins').rglob('*') if p.is_file()}
         path = 'integrations/plugins/codex/task-checkpoint-record/hooks/hooks.json'
         hooks = json.loads(payload[path][0]); hooks['hooks']['Stop'][0]['hooks'][0]['command'] += '; echo unexpected'
         payload[path] = (json.dumps(hooks).encode(), 0o644)
         with self.assertRaisesRegex(ValueError, 'client_hook_command_not_reviewed'):
-            client.overlay_files('codex', payload, '0.1.0')
+            client.overlay_files('codex', payload, version)
 
 
 if __name__ == '__main__':

@@ -34,7 +34,7 @@ export function materializeAgentActivation(config: PortableConfig, value: unknow
   if (typeof objective !== "string" || !objective.trim() || Buffer.byteLength(objective) > 4096 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(objective)) fail("agent_objective_invalid");
   const cfg = config.agent_service;
   if (!cfg) fail("agent_service_config_required");
-  if (!config.codex.home || !config.codex.executable) fail("agent_codex_paths_required");
+  if (!config.codex.home || (cfg.runtime_update.mode === "pinned" && !config.codex.executable)) fail("agent_codex_paths_required");
   const array = (raw: unknown, cap: number): unknown[] => {
     if (raw === undefined) return [];
     if (!Array.isArray(raw) || raw.length > cap) fail("agent_admission_array_budget");

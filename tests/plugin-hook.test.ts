@@ -99,6 +99,9 @@ describe("client plugin activation contract", () => {
       cpSync(join(repo, "src"), join(plugin, "runtime/recorder/src"), { recursive: true });
       mkdirSync(join(plugin, "runtime/recorder/config"));
       cpSync(join(repo, "config/runtime.bunfig.toml"), join(plugin, "runtime/recorder/config/runtime.bunfig.toml"));
+      // The actual client artifact includes this imported contract beside src/.
+      mkdirSync(join(plugin, "runtime/recorder/container"));
+      cpSync(join(repo, "container/app-server-surface.json"), join(plugin, "runtime/recorder/container/app-server-surface.json"));
       // Bun --no-env-file alone still honors cwd/global preload scripts. The
       // native definitions must select the shipped minimal config as well.
       const home = join(f.root, "synthetic-home"); mkdirSync(home);
@@ -117,6 +120,7 @@ describe("client plugin activation contract", () => {
       const [code, out, err] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
       expect({ code, out, err }).toEqual({ code: 0, out: "{}\n", err: "" });
       expect((f.store.db.query("SELECT COUNT(*) AS n FROM events").get() as any).n).toBe(1);
+      expect(existsSync(join(f.state, "codex-runtime"))).toBe(false);
       expect(existsSync(join(f.root, "NOT_CREATED"))).toBe(false);
       expect(existsSync(marker)).toBe(false);
       // Removing only the isolated installed fixture preserves user-owned state/config.

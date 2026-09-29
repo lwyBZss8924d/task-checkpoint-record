@@ -2,13 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Store } from "../src/store.ts";
 import { configTemplate } from "../src/config.ts";
 import { bunRuntimeFlags } from "../src/bun-runtime.ts";
 import { canonical, sha } from "../src/security.ts";
 import { SupervisorStore } from "../src/supervisor-store.ts";
-import { agentCommand } from "../src/agent-cli.ts";
+import { agentCommand, createConfiguredAgentDaemon } from "../src/agent-cli.ts";
+import { fixtureQualifiedRuntime } from "./fixture-qualified-runtime.ts";
 
 const roots:string[]=[],stores:Store[]=[];
 afterEach(()=>{for(const store of stores.splice(0))store.close();for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true});});
@@ -21,6 +22,7 @@ function fixture(){
   const store=new Store(state,{initialize:true});stores.push(store);
   store.bind({schema_version:"task-checkpoint-record.binding.v1",binding_id:"b",task_id:"task",project_id:"project",client:"codex",profile:"test",runtime_home:null,native_session_id:"synthetic-session",role:"master",source_root:root,sources:[{source_id:"raw",path:source,format:"codex",start_at:"new"}]});
   const config=configTemplate();config.recorder.state_dir=state;config.codex.home=nativeHome;config.codex.executable=executable;
+  config.agent_service.runtime_update.mode="pinned";
   const configFile=join(root,"suite.json"),admissionFile=join(root,"admission.json");writeFileSync(configFile,JSON.stringify(config));
   const admission={schema_version:"task-checkpoint-record.agent-activation.v1",activation_id:"a",binding_id:"b",daemon_id:"d"};writeFileSync(admissionFile,JSON.stringify(admission));
   const run=(args:string[],env:NodeJS.ProcessEnv={},input?:unknown)=>spawnSync(process.execPath,[...bunRuntimeFlags(),cli,...args],{cwd:root,encoding:"utf8",input:input===undefined?undefined:JSON.stringify(input),env:{HOME:homedir(),PATH:process.env.PATH,...env}});
@@ -32,6 +34,69 @@ function packet(){
   return{packet_handle:"p",packet_sha256,admission_ref:"synthetic-owner-admission",attempt_budget:1,prepared:{schema_version:"ultrafast-atif.prepared-decision.v1",provider,data_class,request,pair_map,request_sha256:sha(canonical(request)),request_bytes:Buffer.byteLength(canonical(request)),pair_map_sha256:sha(canonical(pair_map)),packet_sha256}};
 }
 describe("explicit native agent CLI",()=>{
+  test("runtime status and retained rollback use local receipts without a database, login or native model",()=>{
+    const s=fixture(),absent=join(s.root,"absent-managed");
+    const missing=s.run(["runtime","status","--root",absent]);expect(missing.status).toBe(0);expect(existsSync(absent)).toBe(false);
+    const qualified=fixtureQualifiedRuntime(s.config.codex.executable!,"0.998.0"),root=dirname(dirname(dirname(qualified.qualificationPath)));
+    mkdirSync(join(root,"checks"));writeFileSync(join(root,".update.lock"),"",{mode:0o600});
+    writeFileSync(join(root,"current.json"),JSON.stringify({schema_version:"task-checkpoint.codex-selection.v1",selection:qualified}),{mode:0o600});
+    const inspected=s.run(["runtime","status","--root",root]);expect({status:inspected.status,stdout:inspected.stdout,stderr:inspected.stderr}).toMatchObject({status:0});expect(JSON.parse(inspected.stdout).selection).toEqual(qualified);
+    const held=s.run(["runtime","rollback","--root",root,"--version","0.998.0"]);expect(held.status).toBe(0);expect(JSON.parse(held.stdout)).toMatchObject({status:"held_not_latest",latestCheckSucceeded:false,selection:qualified});
+    const again=s.run(["runtime","update","--root",root]);expect(again.status).toBe(0);expect(JSON.parse(again.stdout).status).toBe("held_not_latest");
+    expect(s.run(["runtime","rollback","--root",root]).status).toBe(1);
+    expect(s.run(["runtime","status","--root",root,"--resume-latest","true"]).status).toBe(1);
+    expect(s.run(["runtime","update","--root",root,"--resume-latest","perhaps"]).status).toBe(1);
+    expect(s.agents.initialized()).toBe(false);
+  });
+  test("local held pointer changes trigger the next idle check before the network interval",async()=>{
+    const s=fixture(),a=fixtureQualifiedRuntime(s.config.codex.executable!,"0.998.0"),b=fixtureQualifiedRuntime(s.config.codex.executable!,"0.999.0");
+    const root=dirname(dirname(dirname(a.qualificationPath)));s.config.agent_service.runtime_update={mode:"latest-stable",root,check_interval_ms:14400000};
+    writeFileSync(s.configFile,JSON.stringify(s.config));
+    const pointer=(selection:typeof a)=>writeFileSync(join(root,"current.json"),JSON.stringify({schema_version:"task-checkpoint.codex-selection.v1",selection}));pointer(b);
+    expect(s.run(["agent","activate","--config",s.configFile,"--file",s.admissionFile]).status).toBe(0);
+    let calls=0;const d=createConfiguredAgentDaemon(s.agents,"d",{}, {ensureRuntime:async options=>{
+      calls++;expect(options.force).toBe(calls===1);return{status:calls===1?"current":"held_not_latest",selection:calls===1?b:a,checkedAt:new Date().toISOString(),latestCheckSucceeded:calls===1,updateFailure:null};
+    }});
+    try{expect((await d.once()).state).toBe("idle");expect((await d.once()).state).toBe("idle");expect(calls).toBe(1);
+      pointer(a);writeFileSync(join(root,"hold.json"),JSON.stringify({selection:a,held_at:new Date().toISOString()}));
+      expect((await d.once()).state).toBe("idle");expect(calls).toBe(2);expect((s.agents.status() as any).runtime_updates[0]).toMatchObject({status:"held_not_latest",stale:true,selection:a});
+      expect((s.agents.status() as any).activations[0]).toMatchObject({rounds_reserved:0,native_calls:0});
+    }finally{await d.close();}
+  });
+  test.each(["current","update_failed"] as const)("concurrent held selection invalidates the cached %s result at the next idle cycle",async firstStatus=>{
+    const s=fixture(),a=fixtureQualifiedRuntime(s.config.codex.executable!,"0.998.0"),b=fixtureQualifiedRuntime(s.config.codex.executable!,"0.999.0");
+    const root=dirname(dirname(dirname(a.qualificationPath)));s.config.agent_service.runtime_update={mode:"latest-stable",root,check_interval_ms:14400000};
+    writeFileSync(s.configFile,JSON.stringify(s.config));writeFileSync(join(root,"current.json"),JSON.stringify({schema_version:"task-checkpoint.codex-selection.v1",selection:a}));
+    expect(s.run(["agent","activate","--config",s.configFile,"--file",s.admissionFile]).status).toBe(0);
+    let calls=0;const d=createConfiguredAgentDaemon(s.agents,"d",{}, {ensureRuntime:async options=>{
+      calls++;expect(options.force).toBe(calls===1);
+      if(calls===1){
+        // The updater has fixed result A, then another owner operation atomically holds B before its promise resumes.
+        writeFileSync(join(root,"current.json"),JSON.stringify({schema_version:"task-checkpoint.codex-selection.v1",selection:b,hold:{held_at:new Date().toISOString(),reason:"explicit_operator_rollback"}}));
+        return{status:firstStatus,selection:a,checkedAt:new Date().toISOString(),latestCheckSucceeded:firstStatus==="current",updateFailure:firstStatus==="current"?null:{code:"synthetic_update_failure"}};
+      }
+      return{status:"held_not_latest",selection:b,checkedAt:new Date().toISOString(),latestCheckSucceeded:false,updateFailure:null};
+    }});
+    try{
+      expect((await d.once()).state).toBe("idle");expect((s.agents.status() as any).runtime_updates[0].selection).toEqual(a);
+      expect((await d.once()).state).toBe("idle");expect(calls).toBe(2);
+      expect((s.agents.status() as any).runtime_updates[0]).toMatchObject({status:"held_not_latest",stale:true,selection:b});
+      expect((await d.once()).state).toBe("idle");expect(calls).toBe(2);
+      expect((s.agents.status() as any).activations[0]).toMatchObject({rounds_reserved:0,native_calls:0});
+    }finally{await d.close();}
+  });
+  test("latest mode admits a dedicated home without a preinstalled binary; update failures are explicit and bounded",async()=>{
+    const s=fixture();s.config.codex.executable=null;s.config.agent_service.runtime_update.mode="latest-stable";writeFileSync(s.configFile,JSON.stringify(s.config));
+    expect(s.run(["agent","activate","--config",s.configFile,"--file",s.admissionFile]).status).toBe(0);
+    let calls=0;const d=createConfiguredAgentDaemon(s.agents,"d",{}, {ensureRuntime:async options=>{
+      calls++;expect(options).toMatchObject({root:join(s.state,"codex-runtime"),busy:false,force:true,currentExecutable:null});
+      return{status:"update_failed",selection:null,checkedAt:"2026-01-01T00:00:00Z",latestCheckSucceeded:false,updateFailure:{code:"synthetic_offline"}};
+    }});
+    try{expect((await d.once()).state).toBe("runtime_unavailable");expect((await d.once()).state).toBe("runtime_unavailable");expect(calls).toBe(1);
+      expect((s.agents.status() as any).runtime_updates).toMatchObject([{daemon_id:"d",stale:true,status:"update_failed",selection:null,update_failure:{code:"synthetic_offline"}}]);
+      expect((s.store.db.query("SELECT COUNT(*) AS n FROM agent_model_calls").get() as any).n).toBe(0);
+    }finally{await d.close();}
+  });
   test("status/schema/activation are model-free; future Hook wakes are idempotent",()=>{
     const s=fixture();const before=s.run(["agent","status","--state",s.state]);expect(before.status).toBe(0);expect(JSON.parse(before.stdout).initialized).toBe(false);
     expect(s.agents.initialized()).toBe(false);expect(s.run(["schema","agent-activation"]).status).toBe(0);

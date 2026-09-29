@@ -5,12 +5,14 @@
     "export": "SUPPORTED_CODEX_VERSIONS",
     "must_equal": [
       "0.157.1",
-      "0.158.0"
+      "0.158.0",
+      "0.159.0"
     ]
   },
   "supported_versions": [
     "0.157.1",
-    "0.158.0"
+    "0.158.0",
+    "0.159.0"
   ],
   "comparison": {
     "root_type": "object",
@@ -418,6 +420,94 @@
           "equals": {
             "type": "boolean"
           }
+        },
+        {
+          "pointer": "/definitions/SandboxPolicy",
+          "equals": {
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "dangerFullAccess"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "networkAccess": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "enum": [
+                      "readOnly"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "networkAccess": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/NetworkAccess"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "enum": [
+                      "externalSandbox"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "excludeSlashTmp": {
+                    "type": "boolean"
+                  },
+                  "excludeTmpdirEnvVar": {
+                    "type": "boolean"
+                  },
+                  "networkAccess": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "enum": [
+                      "workspaceWrite"
+                    ],
+                    "type": "string"
+                  },
+                  "writableRoots": {
+                    "items": {
+                      "$ref": "#/definitions/AbsolutePathBuf"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          }
         }
       ]
     },
@@ -595,6 +685,94 @@
               "type"
             ],
             "type": "object"
+          }
+        },
+        {
+          "pointer": "/definitions/SandboxPolicy",
+          "equals": {
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "dangerFullAccess"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "networkAccess": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "enum": [
+                      "readOnly"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "networkAccess": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/NetworkAccess"
+                      }
+                    ]
+                  },
+                  "type": {
+                    "enum": [
+                      "externalSandbox"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "excludeSlashTmp": {
+                    "type": "boolean"
+                  },
+                  "excludeTmpdirEnvVar": {
+                    "type": "boolean"
+                  },
+                  "networkAccess": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "enum": [
+                      "workspaceWrite"
+                    ],
+                    "type": "string"
+                  },
+                  "writableRoots": {
+                    "items": {
+                      "$ref": "#/definitions/AbsolutePathBuf"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
           }
         }
       ]

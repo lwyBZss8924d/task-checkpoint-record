@@ -16,6 +16,7 @@
   "codex": {
     "executable": null,
     "home": null,
+    "qualification_receipt": null,
     "supervisor": {
       "model": "gpt-6-sol",
       "effort": "medium"
@@ -40,6 +41,12 @@
     }
   },
   "agent_service": {
+    "execution_mode": "danger-full-access",
+    "runtime_update": {
+      "mode": "latest-stable",
+      "root": null,
+      "check_interval_ms": 14400000
+    },
     "concurrency": 2,
     "max_workers": 2,
     "max_native_turns": 3,

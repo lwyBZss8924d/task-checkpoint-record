@@ -34,6 +34,16 @@ standard storage backend. There is no implicit collector/export configuration.
   explicit option and there is no silent model fallback.
 - Native Codex App Server integration uses a real protocol adapter and explicit
   runtime/home/model bindings; starting that adapter is separate from source tests.
+- The dedicated agent service follows official stable Codex releases using an
+  owned runtime namespace, complete-package checksum/layout verification and
+  protocol qualification. Updates happen on startup and at configured safe idle
+  boundaries; running turns retain their selected executable and version.
+- Activated daemon templates use unattended native `never` approval and
+  `danger-full-access` execution. Legacy prepared-input library defaults remain
+  explicit. The returned native policy must match the requested policy.
+- Automatic image builds resolve the current official Codex stable release and
+  Codex-universal base digest, verify the resulting image and retain immutable
+  version/source/qualification metadata before publishing current tags.
 - Activation freezes objective, config, content admissions and finite per-round
   and total budgets. Expired attempts with native/provider effects remain
   interrupted or outcome-unknown; retry is explicit and retains prior evidence.

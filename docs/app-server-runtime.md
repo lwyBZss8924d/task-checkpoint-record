@@ -8,9 +8,11 @@ must never call this API directly or wait for its response.
 Each call owns one `codex app-server --stdio --strict-config` child, one fresh
 **persisted** thread, and one turn. Persistent authentication and model-job RAW stay
 in the selected dedicated Codex home. The record service owns the child's lifetime
-independently of the master Hook; v0.1 does not install the official Codex daemon,
-bootstrap a Codex package, reuse a resident model process, or resume another job's
-thread. Source tests use a fake stdio executable and temporary dedicated homes.
+independently of the master Hook. This prepared-input API does not install the
+official Codex daemon, implicitly download a package, reuse a resident model
+process, or resume another job's thread. The separate activated
+[agent service](agent-service.md) owns resident sessions and managed runtime
+updates. Source tests use a fake stdio executable and temporary dedicated homes.
 
 ## Model and data contract
 
@@ -100,7 +102,7 @@ inherited API key, another profile or an interactive auth ceremony.
 Doctor/review sequence before the first native probe:
 
 1. Check the explicitly selected executable with `codex --version`; the adapter
-   accepts exactly `0.157.1` and `0.158.0`. Generate that binary's schema with
+   has explicit contracts for `0.157.1`, `0.158.0` and `0.159.0`. Generate a selected binary's schema with
    `codex app-server generate-json-schema --experimental --out <temporary-dir>`
    for a version upgrade review. This is an offline schema operation.
 2. Render and inspect `dedicatedConfigText()`; provision only the dedicated home
@@ -114,21 +116,23 @@ Doctor/review sequence before the first native probe:
 
 ## Supported release contracts
 
-The supported-version set is explicit in `src/model-policy.ts`. The adapter reads
-the build version from the leading native `initialize.userAgent` product token,
-rejects unknown and prerelease versions before auth/thread requests, and returns
-the observed value as `runtime.protocolVersion` (`codex-0.157.1` or
-`codex-0.158.0`). A supported version mentioned only in a later user-agent suffix
-does not qualify an unsupported build.
+The directly supported version set is explicit in `src/model-policy.ts`. A future
+stable version additionally needs a package/protocol qualification bound to its
+actual executable and the current contract; a version string alone is insufficient.
+The adapter reads the leading native `initialize.userAgent` product token and
+requires it to match that selection before auth/thread work. Prereleases remain
+excluded. It returns the observed value as `runtime.protocolVersion`; a known
+version mentioned only in a later user-agent suffix cannot qualify a build.
 
-The OSS/Docker package targets the official stable
-[Codex 0.158.0 release](https://github.com/openai/codex/releases/tag/rust-v0.158.0).
-Use its complete platform package and verify the release asset checksum and
+The daemon's managed runtime and image automation select the official latest
+stable release, currently based on the
+[Codex 0.159.0 contract](https://github.com/openai/codex/releases/tag/rust-v0.159.0).
+Use the complete platform package and verify the release asset checksum and
 `codex-package.json` before execution. That manifest identifies the version,
 platform target and `bin/codex` entrypoint; the full package also supplies the
 matching code-mode host. The adapter still disables code mode by policy.
 
-Offline verification of the official 0.158.0 full macOS arm64 package checked
+The retained 0.1 release's offline verification of the official 0.158.0 full macOS arm64 package checked
 its GitHub asset SHA-256, manifest, executable version, App Server help and
 binary-generated experimental schemas. Fourteen adapter-facing schema types were
 compared with 0.157.1. Their top-level fields and required sets are unchanged;
@@ -137,8 +141,8 @@ the `promax` plan label. Neither changes the adapter's selected account/model or
 final-output contract. The existing minimal configuration also validates against
 the version-tagged 0.158.0 configuration schema.
 
-This compatibility evidence is source/offline-contract inspection plus fake-stdio
-tests for both versions. Native model probes, container execution and authenticated
+Those historical checks remain bound to their original versions. New managed
+selections carry their own package/protocol/initialization receipts. Native model probes, container execution and authenticated
 account access are separate receipts; an offline schema comparison does not prove
 them. Supporting the packaged release does not replace the host Codex executable
 or modify existing runtime profiles.
@@ -153,7 +157,12 @@ Supported settings disable shell, apps/plugins, multi-agent, code mode, web sear
 Hooks, memories, goals, image/browser/computer use, plan/user-input features,
 automatic skill instructions and host skill discovery. Project instruction byte
 allowance is zero. Approval policy is `never`, reviewer is `user`, sandbox is
-`read-only` with network disabled for sandboxed tools. The child inherits a small
+`read-only` by default for this legacy API, with network disabled for sandboxed
+tools. An explicit `executionMode: "danger-full-access"` selects the matching
+native configuration, thread sandbox and turn policy; the returned native policy
+must match. Activated daemon templates select that unattended mode. This is the
+app-server equivalent of the TUI bypass mode, not an unsupported TUI flag appended
+to `app-server`. The child inherits a small
 OS/proxy environment allowlist; model credential environment variables and parent
 Codex identity variables are not inherited.
 
