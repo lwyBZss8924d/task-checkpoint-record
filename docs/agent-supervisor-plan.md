@@ -116,6 +116,14 @@ or foreign selection is rejected before dispatch with a bounded argument hint;
 it never expands into the full snapshot. The supervisor prompt includes at most
 20 opaque handle-and-kind previews, without source bodies.
 
+Completed PTC tools return a full `evidence_ref` and a shorter `citation_ref`.
+Workers may copy the short value into `evidence_refs`; the host resolves it only
+when exactly one issued full reference matches within that worker's stored
+evidence. The supervisor receives the workers' preferred `citation_refs` and
+resolves them within the current run. Unknown or ambiguous aliases are rejected,
+and durable reports and proposal deep links retain the full reference. The short
+value is a citation aid, not a new evidence source or a wider access grant.
+
 Workers receive these tools through an injected helper adapter:
 
 | Tool | Model-selected arguments | Host-enforced scope |

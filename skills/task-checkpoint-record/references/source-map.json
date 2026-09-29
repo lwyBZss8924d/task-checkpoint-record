@@ -51,15 +51,15 @@
     },
     {
       "destination": "references/docs/agent-service.md",
-      "projected_sha256": "1c0358e88e234c212896cd09d6ca0355bf806dd36f34c14a66ea99f97625c100",
+      "projected_sha256": "68b5d987a04fb5665a8747b9c38d90a5c8f3a61acedb7a3f3052649f4f825b04",
       "source": "docs/agent-service.md",
-      "source_sha256": "cb7d06f75d3c609c584aca9bd2083f07e68899e1a8212c8ff429cb596daef2c7"
+      "source_sha256": "fcc1b54b5e0afce03912d30aff349d6489099c3962af10336eb6f2d7e182b0c6"
     },
     {
       "destination": "references/docs/agent-supervisor-plan.md",
-      "projected_sha256": "5d68e2fa70553fb46ffcd9e63fafc267425db74340fc3cfbc3cd07c04a63d1c2",
+      "projected_sha256": "e91798163175e08707a6e760e876d6a9f21d0e237ce71905a06c59a8e8191076",
       "source": "docs/agent-supervisor-plan.md",
-      "source_sha256": "d80039e48f3dac01073ba913458057f3816fb9310a8a908b625a0b4d82127e62"
+      "source_sha256": "4517eb8de70706237bb5207d86a83f327127586cd0cc957f3fa3720a2c3c39f7"
     },
     {
       "destination": "references/docs/app-server-runtime.md",

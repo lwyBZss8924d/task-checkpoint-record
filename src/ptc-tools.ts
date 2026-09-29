@@ -13,6 +13,11 @@ import { runHelper, runScoringHelper, workerOptions } from "./worker.ts";
 type JsonObject = Record<string, unknown>;
 type Mode = "metadata" | "prepared_fragment" | "owner_selected_source";
 type DataClass = AgentToolResult["dataClass"];
+/** Display shorthand only. Consumers must resolve it uniquely inside their stored evidence scope. */
+export function citationAlias(evidenceRef: string): string | null {
+  const match = /^ptc-evidence:([a-f0-9]{64})$/u.exec(evidenceRef);
+  return match ? "cite:" + match[1]!.slice(0, 16) : null;
+}
 export interface PtcHelperRequest {
   operation: "query" | "retrieve" | "context-pack";
   records: NormalizedRecord[];
@@ -390,7 +395,7 @@ export function createPtcTools(options: PtcOptions) {
           if (context.signal.aborted) fail("ptc_cancelled");
           await assertActive();
           result.value = { ...object(result.value), schema_version: "task-checkpoint.ptc-result.v1", tool: name,
-            ...scope, evidence_ref: evidenceRef };
+            ...scope, evidence_ref: evidenceRef, citation_ref: citationAlias(evidenceRef)! };
           receipt.result = jsonCopy(result, limits.maxOutputBytes); receipt.result_sha256 = sha(canonical(receipt.result));
           receipt.status = "completed";
         } catch (error) { receipt.error_code = errorCode(error); }

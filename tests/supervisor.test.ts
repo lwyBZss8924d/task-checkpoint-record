@@ -7,7 +7,8 @@ import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { Store } from "../src/store.ts";
 import { SupervisorStore } from "../src/supervisor-store.ts";
-import { SupervisorDaemon, type SupervisorPtcFactory, type SupervisorRuntimeFactory } from "../src/supervisor.ts";
+import { SupervisorDaemon, validateReduction, validateWorkerReport, type SupervisorPtcFactory, type SupervisorRuntimeFactory } from "../src/supervisor.ts";
+import { citationAlias } from "../src/ptc-tools.ts";
 import { createSupervisorPolicy } from "../src/supervisor-policy.ts";
 import { canonical, fingerprint, openRegular, sha, TcrError } from "../src/security.ts";
 import { runHelper, runScoringHelper, workerOptions } from "../src/worker.ts";
@@ -36,8 +37,8 @@ function setup(overrides:Partial<SupervisorPolicy>={},queued=false,initialRecord
 }
 function closeReceipt(identity:AgentIdentity,turns=1):AgentCloseReceipt{return{schemaVersion:"task-checkpoint.agent-close.v1",native:{threadId:identity.threadId,sessionId:identity.sessionId},pid:identity.pid,ownedProcessClosed:true,ownedProcessGroupClosed:true,hostHandlersSettled:true,turnsStarted:turns,reason:"owner_closed"};}
 function turnResult<T>(identity:AgentIdentity,turnId:string,output:T):AgentTurnResult<T>{return{schemaVersion:"task-checkpoint.agent-turn.v1",output,native:{threadId:identity.threadId,sessionId:identity.sessionId,turnId},requested:identity.requested,observed:identity.observed,input:{dataClass:"metadata_only",sha256:sha("synthetic"),bytes:9},usage:null,toolReceipts:[],runtime:{protocolVersion:"codex-0.157.1",pid:identity.pid,sessionOpen:true,turnIndex:1,elapsedMs:1,nativeCompactions:0,toolPolicy:"restricted-native-and-explicit-host-allowlist"}};}
-function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:boolean;badNativeGraph?:boolean;recommendAttention?:boolean;beforeDelegate?:(tool:AgentTool,prompt:Record<string,any>)=>void}={}){
-  let supervisors=0,workers=0,active=0,peak=0,closed=0;const observedThreads:string[]=[];
+function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:boolean;badNativeGraph?:boolean;recommendAttention?:boolean;useCitationAliases?:boolean;beforeDelegate?:(tool:AgentTool,prompt:Record<string,any>)=>void}={}){
+  let supervisors=0,workers=0,active=0,peak=0,closed=0;const observedThreads:string[]=[],submittedCitations:{role:string;refs:string[]}[]=[];
   const identity=(activation:SupervisorActivation,worker:boolean,id:number):AgentIdentity=>({threadId:(worker?"worker-thread-":"supervisor-thread-")+id,sessionId:(worker?"worker-session-":"supervisor-session-")+id,pid:10000+id,role:worker?"semantic-worker":"supervisor",requested:activation.policy[worker?"worker":"supervisor"],observed:activation.policy[worker?"worker":"supervisor"],protocolVersion:"codex-0.157.1"});
   const factory:SupervisorRuntimeFactory={
     async createSupervisor(activation,initialTools){
@@ -48,7 +49,8 @@ function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:
         const tool=(turn.tools??initialTools)[0];const tasks=Array.from({length:options.workers??2},(_,i)=>({task_key:"worker-"+i,objective:"Inspect this bounded source selection."}));
         options.beforeDelegate?.(tool,JSON.parse(turn.input.text));
         const args=tool.validateArguments({tasks});const reply=await tool.execute(args,{threadId:id.threadId,turnId,callId:"delegate-"+turns,signal:turn.signal??new AbortController().signal});
-        const evidence=(reply.value as any).workers.map((w:any)=>w.evidence_refs[0]);
+        const evidence=(reply.value as any).workers.map((w:any)=>options.useCitationAliases?w.citation_refs[0]:w.evidence_refs[0]);
+        submittedCitations.push({role:"supervisor",refs:[...evidence]});
         const output=turn.validateOutput({summary:"Bounded workers completed.",continuity_context:"Continue using the retained source handles.",findings:[{category:"progress",statement:"Each worker inspected scoped evidence.",evidence_refs:evidence.slice(0,32)}],next_actions:options.recommendAttention?[{action_id:"owner-review",reason:"Inspect the proposal before sealing.",evidence_refs:[evidence[0]]}]:[],recommendation:options.recommendAttention?"needs_attention":"continue"});
         return{...turnResult(id,turnId,output),toolReceipts:[{callId:"delegate-"+turns,tool:tool.name,threadId:id.threadId,turnId,argumentSha256:sha(canonical({tasks})),argumentBytes:Buffer.byteLength(canonical({tasks})),resultSha256:sha(canonical({data_class:reply.dataClass,value:reply.value})),resultBytes:Buffer.byteLength(canonical(reply)),dataClass:reply.dataClass,status:"succeeded"}]};
       },async close(){if(!ended){closed++;ended=true;}const receipt=closeReceipt(id,turns);resolveClose(receipt);return receipt;},async cancel(){return this.close();}};return session;
@@ -60,16 +62,17 @@ function fakeRuntime(options:{workers?:number;holdWorkers?:boolean;badEvidence?:
         if(options.holdWorkers)await new Promise<void>((_resolve,reject)=>{const stop=()=>reject(Object.assign(new TcrError("synthetic_cancelled"),{native:{threadId:id.threadId,turnId},closeReceipt:closeReceipt(id)}));if(turn.signal?.aborted)stop();else turn.signal?.addEventListener("abort",stop,{once:true});});
         await Bun.sleep(5);
         const tool=tools[0],callId="query-"+id.threadId;const result=await tool.execute(tool.validateArguments({}),{threadId:id.threadId,turnId,callId,signal:turn.signal??new AbortController().signal});
-        const ref=(result.value as any).evidence_ref;
+        const ref=options.useCitationAliases?(result.value as any).citation_ref:(result.value as any).evidence_ref;
+        submittedCitations.push({role:"worker",refs:[ref]});
         const report=turn.validateOutput({task_key:task.task_key,summary:"Observed bounded metadata.",claims:[{claim_id:"observed",statement:"The selected record is present.",evidence_refs:[options.badEvidence?"not-issued":ref]}],omissions:[]});
         return{...turnResult(id,turnId,report),toolReceipts:[{callId,tool:tool.name,threadId:options.badNativeGraph?"borrowed-thread":id.threadId,turnId,argumentSha256:sha("{}"),argumentBytes:2,resultSha256:sha(canonical({data_class:result.dataClass,value:result.value})),resultBytes:Buffer.byteLength(canonical(result)),dataClass:result.dataClass,status:"succeeded"}],close:closeReceipt(id)};
       }finally{active--;}
     }
   };
-  return{factory,status:()=>({supervisors,workers,active,peak,closed,observedThreads})};
+  return{factory,status:()=>({supervisors,workers,active,peak,closed,observedThreads,submittedCitations})};
 }
 const fakePtc:SupervisorPtcFactory=context=>({tools:[{name:"tcr_query",description:"Synthetic scoped metadata query",inputSchema:{type:"object",additionalProperties:false},validateArguments:v=>v,async execute(_args,native){
-  context.assertActive();const ref="ptc:"+sha(context.workerId+native.threadId+native.turnId+native.callId),value={evidence_ref:ref,record_count:context.snapshot.record_refs.length};
+  context.assertActive();const ref="ptc-evidence:"+sha(context.workerId+native.threadId+native.turnId+native.callId),value={evidence_ref:ref,citation_ref:citationAlias(ref)!,record_count:context.snapshot.record_refs.length};
   await context.onReceipt({schema_version:"task-checkpoint.ptc-receipt.v1",evidence_ref:ref,activation_id:context.activation.activation_id,snapshot_sha256:context.snapshot.snapshot_sha256,binding_id:context.snapshot.binding_id,task_id:context.snapshot.task_id,window_id:context.snapshot.window_id,thread_id:native.threadId,turn_id:native.turnId,call_id:native.callId,tool:"tcr_query",sequence:1,status:"completed",error_code:null,arguments:{},arguments_sha256:sha("{}"),result:{dataClass:"metadata_only",value},result_sha256:sha(canonical(value)),record_handles:context.snapshot.record_refs.map(r=>r.handle),source_refs:[],helper:null,external_attempt_reserved:false,scoring_config_sha256:null});
   return{dataClass:"metadata_only",value};
 }}]});
@@ -91,6 +94,35 @@ test("two workers make scoped tool calls and produce only an intermediate persis
   const resolved=s.store.resolve(proposal.deeplink) as any;expect(resolved.item["reduction.continuity_context"]).toContain("source handles");
   const evidence=s.store.resolve(resolved.item.evidence_deeplinks[0]) as any;expect(evidence.item.status).toBe("completed");expect(evidence.source_bytes_read).toBe(false);
   expect(()=>s.store.resolve("https://invalid.example/secret")).toThrow("foreign_agent_deeplink");expect(()=>s.store.resolve(proposal.deeplink,["lease_token"])).toThrow("unknown_agent_projection_field");
+});
+test("worker and supervisor short citations canonicalize to stored full refs through a complete fake turn",async()=>{
+  const s=setup();s.activate();const f=fakeRuntime({useCitationAliases:true,recommendAttention:true}),{d}=daemon(s,f);
+  expect((await d.once()).state).toBe("succeeded");
+  const submitted=f.status().submittedCitations;expect(submitted).toHaveLength(3);
+  expect(submitted.every(item=>item.refs.every(ref=>/^cite:[a-f0-9]{16}$/.test(ref)))).toBe(true);
+  const proposal=JSON.parse((s.base.db.query("SELECT body FROM agent_proposals").get() as any).body),allowed=new Set(proposal.evidence_refs);
+  for(const worker of proposal.workers){
+    const owned=new Set((s.base.db.query("SELECT evidence_ref FROM agent_evidence WHERE worker_id=?").all(worker.worker_id) as any[]).map(row=>row.evidence_ref));
+    expect(worker.result.claims.every((claim:any)=>claim.evidence_refs.every((ref:string)=>/^ptc-evidence:[a-f0-9]{64}$/.test(ref)&&owned.has(ref)))).toBe(true);
+  }
+  for(const item of [...proposal.reduction.findings,...proposal.reduction.next_actions])expect(item.evidence_refs.every((ref:string)=>/^ptc-evidence:[a-f0-9]{64}$/.test(ref)&&allowed.has(ref))).toBe(true);
+  const outputs=s.base.db.query("SELECT result_json FROM agent_model_calls").all() as any[];
+  expect(outputs).toHaveLength(3);expect(outputs.every(row=>!JSON.stringify(JSON.parse(row.result_json)).includes('"cite:'))).toBe(true);
+});
+test("citation aliases reject collisions and foreign scope while exact full IDs remain accepted",()=>{
+  const prefix="0123456789abcdef",a="ptc-evidence:"+prefix+"0".repeat(48),collision="ptc-evidence:"+prefix+"1".repeat(48),foreign="ptc-evidence:"+"f".repeat(64);
+  const task={task_key:"worker",objective:"Inspect scoped metadata."};
+  const report=(refs:string[])=>({task_key:task.task_key,summary:"Observed.",claims:[{claim_id:"one",statement:"Observed.",evidence_refs:refs}],omissions:[]});
+  const reduction=(refs:string[])=>({summary:"Observed.",continuity_context:"Continue.",findings:[{category:"progress",statement:"Observed.",evidence_refs:refs}],next_actions:[],recommendation:"continue"});
+  expect(validateWorkerReport(report([citationAlias(a)!]),task,new Set([a])).claims[0].evidence_refs).toEqual([a]);
+  expect(()=>validateWorkerReport(report([citationAlias(a)!]),task,new Set([a,collision]))).toThrow("model_evidence_alias_ambiguous");
+  expect(()=>validateReduction(reduction([citationAlias(a)!]),new Set([a,collision]))).toThrow("model_evidence_alias_ambiguous");
+  expect(validateWorkerReport(report([a]),task,new Set([a,collision])).claims[0].evidence_refs).toEqual([a]);
+  expect(validateReduction(reduction([a]),new Set([a,collision])).findings[0].evidence_refs).toEqual([a]);
+  expect(()=>validateWorkerReport(report([citationAlias(foreign)!]),task,new Set([a]))).toThrow("model_evidence_outside_scope");
+  expect(()=>validateReduction(reduction([citationAlias(foreign)!]),new Set([a]))).toThrow("model_evidence_outside_scope");
+  expect(()=>validateWorkerReport(report([a.slice(0,-1)]),task,new Set([a]))).toThrow("model_evidence_outside_scope");
+  expect(()=>validateWorkerReport(report([citationAlias(a)!,a]),task,new Set([a]))).toThrow("model_evidence_duplicate");
 });
 test("delegate rejects both empty selections before dispatch, then corrected omission admits one fanout",async()=>{
   const s=setup();s.activate();let rejected=false;const selected:string[][]=[];
