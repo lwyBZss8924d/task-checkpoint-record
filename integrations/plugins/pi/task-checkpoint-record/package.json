@@ -1,0 +1,16 @@
+{
+  "name": "task-checkpoint-record-pi",
+  "version": "0.3.0",
+  "description": "Explicit Pi lifecycle recording and local source-qualified checkpoint recall",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package"],
+  "engines": {"node": ">=22.19.0"},
+  "os": ["darwin", "linux"],
+  "bin": {"task-checkpoint-record-pi": "./scripts/cli.mjs"},
+  "files": ["extensions", "skills", "runtime", "scripts", "licenses", "pi-package.json", "README.md", "AGENTS.md", "llms.txt"],
+  "pi": {"extensions": ["./extensions/index.ts"], "skills": ["./skills"]},
+  "peerDependencies": {"@earendil-works/pi-coding-agent": "*"},
+  "publishConfig": {"access": "public", "registry": "https://registry.npmjs.org"},
+  "repository": {"type": "git", "url": "git+https://github.com/lwyBZss8924d/task-checkpoint-record.git", "directory": "integrations/plugins/pi/task-checkpoint-record"}
+}

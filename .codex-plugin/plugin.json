@@ -1,6 +1,6 @@
 {
   "name": "task-checkpoint-record",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Inspect local checkpoint metadata, plan explicit hook bindings, and retrieve exact task windows.",
   "author": {
     "name": "Task Checkpoint contributors"

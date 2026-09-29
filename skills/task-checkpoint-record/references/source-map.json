@@ -39,9 +39,9 @@
     },
     {
       "destination": "references/docs/adapters-roadmap.md",
-      "projected_sha256": "2674464900fecd80672450cede86b1c4fbd31da1ea2389a29ec8c5dbf9c806bc",
+      "projected_sha256": "fec47eba9672c5bf2e9e652f491062b4b0b888439fd0d56d95eec3ff2f42c3db",
       "source": "docs/adapters-roadmap.md",
-      "source_sha256": "4852b7caabfc9d694aa30f8470764e3492de386a25063165bb57e135bf77c355"
+      "source_sha256": "bc36cf94c7b6e215a593be0af36223b79721982fce87213207154f960d61191f"
     },
     {
       "destination": "references/docs/agent-runtime.md",
@@ -93,9 +93,9 @@
     },
     {
       "destination": "references/docs/distribution.md",
-      "projected_sha256": "065921c64e75ab8e31ce0b6bfd029611415c8d223a23dce53b0102330b0c6b88",
+      "projected_sha256": "96d91878ad0c76ab73d6da218d0543f3974ed64be0df0e8ce5098458460a6290",
       "source": "docs/distribution.md",
-      "source_sha256": "5fc6d68a0bb357f99d4e6919ae319bcbb93daf5110397873bd8d479528b3613e"
+      "source_sha256": "90193df20115287c19fca4a361a43faee676ef0a32c106cc3412c80875139605"
     },
     {
       "destination": "references/docs/engineering-lessons.md",
@@ -126,6 +126,12 @@
       "projected_sha256": "19dfa8cf5e84321dc4e73b088cf467f2b22b52a6760c41e468cc52602da7f418",
       "source": "docs/installation.md",
       "source_sha256": "14476fc469fe1a1c7daba6ae57edc5fba738db9fa8dc6fe886403ab60c6c658a"
+    },
+    {
+      "destination": "references/docs/pi-package.md",
+      "projected_sha256": "424a289a24feff0e412510a41e0fe9b7442b12d99e7c1140af67a81d8aaa943f",
+      "source": "docs/pi-package.md",
+      "source_sha256": "c30cf20c6d41d61dd4a60e5710fe22b2c6b43b81a3dc707567923615f35d1408"
     },
     {
       "destination": "references/docs/runtime-updates.md",

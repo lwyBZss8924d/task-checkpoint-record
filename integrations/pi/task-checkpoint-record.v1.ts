@@ -1,5 +1,5 @@
 /** Pi 0.87.1 adapter template. Importing/registering starts no process or service.
- * Source contract: pi coding-agent 6f7551516b84278eb9da1c340c8e7bc66be1a6ba.
+ * Source contract: pi coding-agent b485fa3128c3d8dae87cb59da6e95db0f991c5bc.
  * Configure an explicit bounded local sink; do not place this in a global extension
  * path without an owner-reviewed install. This factory deliberately has no default
  * Pi auto-loader export: a reviewed wrapper calls registerTaskCheckpointRecord.
@@ -13,7 +13,8 @@ export type PiHookEnvelope = {
     reason: string | null; outcome: string | null; message_entry_id: string | null; tool_result_entry_ids: string[];
     native_turn_id: null; persistence: "unverified_callback_metadata" };
 };
-export type PiRegistrar = { on(event: any, handler: (event: any, ctx: PiContext) => Promise<void>): () => void };
+export type PiEventMetadata = { reason?: unknown; outcome?: unknown; messageEntryId?: unknown; toolResultEntryIds?: unknown };
+export type PiRegistrar = { on(event: PiEventName, handler: (event: PiEventMetadata, ctx: PiContext) => Promise<void>): () => void };
 export function registerTaskCheckpointRecord(pi: PiRegistrar, options: {
   role: "master" | "observer" | "worker";
   admit: (envelope: PiHookEnvelope, signal: AbortSignal) => Promise<void>;
@@ -37,7 +38,7 @@ export function registerTaskCheckpointRecord(pi: PiRegistrar, options: {
         cwd: ctx.cwd, transcript_path: scalar(ctx.sessionManager.getSessionFile()),
         adapter: { schema_version: "task-checkpoint-record.pi-adapter.v1", source_version: "0.87.1",
           reason: scalar(event.reason), outcome: scalar(event.outcome), message_entry_id: scalar(event.messageEntryId),
-          tool_result_entry_ids: Array.isArray(event.toolResultEntryIds) ? event.toolResultEntryIds.slice(0, 64).map(scalar).filter((s: any): s is string => s !== null) : [],
+          tool_result_entry_ids: Array.isArray(event.toolResultEntryIds) ? event.toolResultEntryIds.slice(0, 64).map(scalar).filter((s): s is string => s !== null) : [],
           native_turn_id: null, persistence: "unverified_callback_metadata" }
       };
       const abort = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined;

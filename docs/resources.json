@@ -101,7 +101,7 @@
       "id": "adapters-roadmap",
       "kind": "context",
       "path": "adapters-roadmap.md",
-      "when": "Check publication states and the Pi package extension TODO"
+      "when": "Check client package implementation and publication states"
     },
     {
       "id": "runtime-updates",
@@ -114,6 +114,18 @@
       "kind": "context",
       "path": "image-updates.md",
       "when": "Inspect automatic Codex-universal image builds, exact source/runtime pins and publication evidence"
+    },
+    {
+      "id": "pi-package",
+      "kind": "context",
+      "path": "pi-package.md",
+      "when": "Install and configure the contained Pi extension, observe lifecycle windows and verify source-qualified recall"
+    },
+    {
+      "id": "pi-skill",
+      "kind": "skill",
+      "path": "../integrations/plugins/pi/task-checkpoint-record/skills/task-checkpoint-pi/SKILL.md",
+      "when": "Use the installed Pi package to configure lifecycle recording and recall a bound local task"
     }
   ]
 }

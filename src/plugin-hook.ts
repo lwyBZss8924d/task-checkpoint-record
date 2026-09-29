@@ -1,7 +1,7 @@
 /** Client-plugin entry: a reviewed config and explicit enablement precede every effect. */
 import { isAbsolute, resolve } from "node:path";
 
-export type PluginClient = "codex" | "claude";
+export type PluginClient = "codex" | "claude" | "pi";
 type Environment = Record<string, string | undefined>;
 export type PluginHookPlan =
   | { disposition: "disabled" | "suppressed_role" | "unconfigured" | "invalid_configuration"; argv: null }
@@ -16,7 +16,7 @@ export function planPluginHook(client: PluginClient, env: Environment): PluginHo
   }
   const file = env.TCR_CONFIG, digest = env.TCR_CONFIG_SHA256, profile = env.TCR_PROFILE;
   if (!file || !digest || !profile) return { disposition: "unconfigured", argv: null };
-  if ((client !== "codex" && client !== "claude") || file.length > 4096 ||
+  if ((client !== "codex" && client !== "claude" && client !== "pi") || file.length > 4096 ||
       /[\u0000-\u001f\u007f]/u.test(file) || !isAbsolute(file) || resolve(file) !== file ||
       !/^[a-f0-9]{64}$/u.test(digest) || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(profile)) {
     return { disposition: "invalid_configuration", argv: null };

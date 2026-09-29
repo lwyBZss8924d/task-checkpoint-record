@@ -55,7 +55,8 @@ standard storage backend. There is no implicit collector/export configuration.
   No callback waits for a model or treats a proposal as a formal checkpoint.
 - Codex and Claude full plugins include their native Hooks; Claude includes six
   slash commands. The combined archive contains both CLIs and pinned helper
-  source. Pi package/extension distribution is a separate roadmap item.
+  source. The Pi package carries its default extension factory, bounded lifecycle
+  bridge, Skill and contained components; npm/catalog publication is separate.
 - Structured fields, exact filters, limits/cursors and query presets are the
   default PTC interface. Arbitrary writable SQL and automatic URI following are
   outside the query interface. Deeplinks resolve through this store's stable IDs.

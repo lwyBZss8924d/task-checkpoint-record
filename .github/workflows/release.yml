@@ -53,6 +53,7 @@ jobs:
           python3 scripts/distribution/skill-docs.py links --skill-root "$RUNNER_TEMP/skill-only"
       - run: python3 scripts/distribution/test_bundle.py
       - run: python3 scripts/distribution/test_client_plugins.py
+      - run: python3 -B scripts/distribution/test_pi_package.py
       - run: python3 container/test-protocol.py
       - run: python3 -I -B scripts/runtime/test_update.py
       - run: python3 -I -B container/test-image-ci.py
@@ -79,10 +80,44 @@ jobs:
           tar -xzf "$RUNNER_TEMP"/bundle-artifacts/*-bundle.tar.gz -C "$RUNNER_TEMP/client-source" --strip-components=1
           manifest_sha="$(sha256sum "$RUNNER_TEMP/client-source/release-bundle.json" | cut -d ' ' -f 1)"
           python3 scripts/distribution/client-plugins.py --bundle-root "$RUNNER_TEMP/client-source" --bundle-sha256 "$manifest_sha" --bun "$(command -v bun)" --output "$RUNNER_TEMP/client-artifacts"
+          python3 -B scripts/distribution/pi-package.py --bundle-root "$RUNNER_TEMP/client-source" --bundle-sha256 "$manifest_sha" --bun "$(command -v bun)" --output "$RUNNER_TEMP/pi-artifacts"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: earendil-works/pi
+          ref: b485fa3128c3d8dae87cb59da6e95db0f991c5bc
+          path: _pi-api-contract
+          sparse-checkout-cone-mode: false
+          sparse-checkout: packages/coding-agent/src/core/extensions/types.ts
+          persist-credentials: false
+      - name: Prepare public Pi host SDK only in a temporary test prefix
+        run: |
+          mkdir "$RUNNER_TEMP/pi-host"
+          touch "$RUNNER_TEMP/npm-user-empty" "$RUNNER_TEMP/npm-global-empty"
+          env -u NODE_AUTH_TOKEN -u NPM_TOKEN -u NODE_OPTIONS -u BUN_OPTIONS \
+            npm --userconfig "$RUNNER_TEMP/npm-user-empty" --globalconfig "$RUNNER_TEMP/npm-global-empty" \
+            --cache "$RUNNER_TEMP/npm-cache" --registry https://registry.npmjs.org \
+            install --prefix "$RUNNER_TEMP/pi-host" --ignore-scripts --no-audit --no-fund @earendil-works/pi-coding-agent@0.87.1
+          tar -xzf "$RUNNER_TEMP"/pi-artifacts/*-pi-package.tgz -C "$RUNNER_TEMP/pi-host"
+      - name: Check actual Pi host types and exact selected source API
+        run: >-
+          node scripts/distribution/check-pi-host.mjs --package-root "$RUNNER_TEMP/pi-host/package"
+          --sdk-root "$RUNNER_TEMP/pi-host/node_modules/@earendil-works/pi-coding-agent"
+          --typescript-root "$GITHUB_WORKSPACE/node_modules/typescript" --pi-source-root "$GITHUB_WORKSPACE/_pi-api-contract"
+          --work "$RUNNER_TEMP/pi-type-check"
+      - name: Isolated Pi local install, native loader/callbacks, local ETL and remove
+        env:
+          PI_OFFLINE: '1'
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-isolated-profile
+          JITI_FS_CACHE: '0'
+        run: >-
+          node scripts/distribution/pi-host-smoke.mjs --package-root "$RUNNER_TEMP/pi-host/package"
+          --sdk-root "$RUNNER_TEMP/pi-host/node_modules/@earendil-works/pi-coding-agent"
+          --work "$RUNNER_TEMP/pi-host-check"
       - name: Add unified payload to reviewed public artifacts
         run: |
           cp "$RUNNER_TEMP"/bundle-artifacts/* "$RUNNER_TEMP/public-artifacts/"
           cp "$RUNNER_TEMP"/client-artifacts/* "$RUNNER_TEMP/public-artifacts/"
+          cp "$RUNNER_TEMP"/pi-artifacts/* "$RUNNER_TEMP/public-artifacts/"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-source-and-plugin
@@ -111,6 +146,7 @@ jobs:
           sha256sum --check SHA256SUMS
           sha256sum --check ./*-bundle.SHA256SUMS
           sha256sum --check client-plugins.SHA256SUMS
+          sha256sum --check pi-package.SHA256SUMS
       - name: Create draft release only
         run: >-
           gh release create "$RELEASE_TAG" public-artifacts/*

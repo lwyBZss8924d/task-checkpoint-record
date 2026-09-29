@@ -24,7 +24,7 @@ an independent [source repository](https://github.com/lwyBZss8924d/ultrafast-ati
 - Automatic discovery and qualification of the latest stable Codex package for
   the dedicated daemon, with versioned installs and recorded update failures.
 - Self-contained Skills, Codex and Claude plugins with native Hooks, Claude slash
-  commands, source/release checks and containers.
+  commands, a Pi lifecycle package, source/release checks and containers.
 
 Worker concurrency defaults to two and is capped at 32. Native worker fan-out
 also obeys separate per-round and activation-wide budgets. Hooks enqueue work
@@ -168,8 +168,9 @@ The [client plugins](docs/client-plugins.md) include seven Codex lifecycle event
 or six Claude events, plus six Claude slash commands. They require explicit
 configuration, enablement and native trust; install alone does not activate a
 task. See [distribution](docs/distribution.md) for artifacts, CI, containers and
-the combined helper payload. Pi package/extension adoption is tracked in the
-[adapter roadmap](docs/adapters-roadmap.md).
+the combined helper payload. The [Pi package](docs/pi-package.md) contains its
+extension, bounded CLI bridge and helper; npm/catalog publication and client
+adoption retain separate evidence in the [adapter roadmap](docs/adapters-roadmap.md).
 
 The agent service and optional prepared-input `runAppServerTask`/`runSupervisor`
 library use a dedicated Codex home and standard `codex login --device-auth`.
