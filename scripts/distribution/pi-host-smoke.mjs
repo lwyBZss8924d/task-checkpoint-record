@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
+import { writeFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -33,6 +34,7 @@ const commands = [];
 function run(command, argv, json = true) {
   const result = spawnSync(command, argv, { cwd: work, env: process.env, encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024 });
   commands.push({ argv: [command, ...argv], exit_code: result.status, stdout_sha256: digest(result.stdout ?? ""), stderr_sha256: digest(result.stderr ?? "") });
+  writeFileSync(join(work, "commands-progress.json"), JSON.stringify(commands, null, 2) + "\n");
   assert.equal(result.status, 0, result.stderr || String(result.error));
   return json ? JSON.parse(result.stdout) : result.stdout;
 }
@@ -57,7 +59,9 @@ const piCli = join(sdk, "dist/bundle/cli.js");
 run(process.execPath, [piCli, "install", pkg], false);
 const listing = run(process.execPath, [piCli, "list"], false); assert(listing.includes(pkg));
 const installed = JSON.parse(await readFile(join(profile, "settings.json"), "utf8"));
-assert(JSON.stringify(installed.packages).includes(pkg));
+const localSources = settings => (settings.packages ?? []).map(item => typeof item === "string" ? item : item.source)
+  .filter(source => typeof source === "string" && !/^(npm:|git:|https?:)/.test(source)).map(source => resolve(profile, source));
+assert(localSources(installed).includes(pkg));
 
 const { discoverAndLoadExtensions } = await import(pathToFileURL(join(sdk, "dist/core/extensions/loader.js")).href);
 const { ExtensionRunner } = await import(pathToFileURL(join(sdk, "dist/core/extensions/runner.js")).href);
@@ -83,20 +87,27 @@ await runner.emit({ type: "session_shutdown", reason: "quit" }); assert.deepEqua
 const events = run(process.execPath, [cli, "query", "--config", config, "--kind", "events"]);
 assert.equal(events.items.length, 5); assert(events.items.every(row => row.native_turn_id === null));
 const drain = run(process.execPath, [cli, "service", "once", "--config", config]); assert.equal(drain.outcomes.succeeded, 5);
-const records = run(process.execPath, [cli, "query", "--config", config, "--kind", "records"]); assert.equal(records.items.length, 3);
-const entry = records.items.find(row => row.native.entry_id === "aa000002"); assert(entry);
-assert.equal(entry.native.parent_entry_id, "aa000001"); assert.equal(entry.native.turn_id, null);
-const resolved = run(process.execPath, [cli, "resolve", "--config", config, "--link", entry.deeplink]);
+const selectedFields = "record_id,native.entry_id,native.parent_entry_id,native.turn_id,deeplink";
+const records = run(process.execPath, [cli, "query", "--config", config, "--kind", "records", "--fields", selectedFields]); assert.equal(records.items.length, 3);
+const entry = records.items.find(row => row["native.entry_id"] === "aa000002"); assert(entry);
+assert.equal(entry["native.parent_entry_id"], "aa000001"); assert.equal(entry["native.turn_id"], null);
+const resolved = run(process.execPath, [cli, "resolve", "--config", config, "--link", entry.deeplink, "--fields", selectedFields]);
 assert(JSON.stringify(resolved).includes("aa000002")); assert.equal(await readFile(source, "utf8"), sourceBytes);
+const helper = info.helper_command;
+const page = run(helper[0], [...helper.slice(1), "ingest", "--input", source, "--format", "pi", "--allow-root", dirname(source), "--offset", "0", "--limit", "10", "--max-bytes", "16384", "--json"]);
+const metadataFile = join(dirname(source), "helper-page.json"); await writeFile(metadataFile, JSON.stringify(page));
+const sourceEntry = page.records.find(row => row.native.entry_id === "aa000002"); assert(sourceEntry);
+const retrieved = run(helper[0], [...helper.slice(1), "retrieve", "--input", metadataFile, "--record-id", sourceEntry.record_id, "--allow-root", dirname(source), "--json"]);
+assert.equal(retrieved.source_verified, true); assert.equal(retrieved.identity_verified, true); assert.equal(retrieved.body_included, false);
 run(process.execPath, [piCli, "remove", pkg], false);
 const remaining = JSON.parse(await readFile(join(profile, "settings.json"), "utf8"));
-assert(!JSON.stringify(remaining.packages ?? []).includes(pkg)); await stat(join(state, "store.sqlite")); await stat(config);
+assert(!localSources(remaining).includes(pkg)); await stat(join(state, "store.sqlite")); await stat(config);
 for (const item of inventory.files) assert.equal(digest(await readFile(join(pkg, item.path))), item.sha256);
 const receipt = { schema_version: "task-checkpoint.pi-host-smoke.v1", status: "pass", pi_version: sdkPackage.version,
   package_inventory_sha256: digest(inventoryBytes), source_core_commit: inventory.components.recorder.source.commit,
   source_helper_commit: inventory.components.helper.source.commit, actual_pi_loader_runner: true,
   actual_local_install_list_remove: true, synthetic_emitted_callbacks: 5, durable_events: events.items.length,
-  extracted_records: records.items.length, verified_entry_id: entry.native.entry_id, native_turn_ids: "unavailable",
+  extracted_records: records.items.length, verified_entry_id: entry["native.entry_id"], verified_body_free_retrieval: true, native_turn_ids: "unavailable",
   source_unchanged: true, user_state_retained_after_remove: true, model_calls: 0, account_operations: 0,
   npm_publish: false, global_pi_profile_used: false, commands };
 await writeFile(join(work, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n");
