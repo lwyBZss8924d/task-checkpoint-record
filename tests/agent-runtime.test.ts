@@ -34,7 +34,8 @@ const mode=MODE,log=LOG,userAgent=USER_AGENT,send=x=>process.stdout.write(JSON.s
 const thread='native-resident-thread';let initialized=false,sequence=0,model,effort;
 const pending=new Map();
 function final(turn,success=true,extraItems=[]){
- const item={type:'agentMessage',id:'answer-'+turn,phase:'final_answer',text:JSON.stringify({ok:success,sequence})};
+ if(mode==='partial-answer')extraItems=[{type:'agentMessage',id:'partial-'+turn,phase:'partial_answer',text:JSON.stringify({ok:false,sequence:-1})},...extraItems];
+ const item={type:'agentMessage',id:'answer-'+turn,phase:mode==='partial-only'?'partial_answer':'final_answer',text:JSON.stringify({ok:success,sequence})};
  const frames=[{method:'item/completed',params:{threadId:thread,turnId:turn,item}},
  {method:'turn/completed',params:{threadId:thread,turn:{id:turn,status:'completed',items:[...extraItems,item]}}}];
  if(mode==='conflict')frames.push({method:'turn/completed',params:{threadId:thread,turn:{id:turn,status:'failed',items:[]}}});
@@ -53,10 +54,11 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(m.method==='turn/start'){
   const turn='native-turn-'+(++sequence);const reply=()=>send({id:m.id,result:{turn:{id:turn,status:'inProgress',items:[]}}});
   if(mode==='wait'){reply();return;}
-  if(mode==='no-tool'||mode==='conflict'||mode==='late-conflict'||mode==='orphan'){
+  if(mode==='no-tool'||mode==='conflict'||mode==='late-conflict'||mode==='orphan'||mode==='partial-only'){
    reply();if(mode==='orphan'){const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});child.unref();appendFileSync(log,JSON.stringify({descendant:child.pid})+'\n');}final(turn);return;
   }
   if(mode!=='early')reply();
+  if(mode==='partial-answer')send({method:'item/completed',params:{threadId:thread,turnId:turn,item:{type:'agentMessage',id:'partial-'+turn,phase:'partial_answer',text:JSON.stringify({ok:false,sequence:-1})}}});
   const callId='call-'+sequence,rpc='request-'+sequence;
   const args=mode==='bad-args'?{limit:999,scope:'outside'}:{limit:1};
   const name=mode==='unknown-tool'?'tcr_unregistered':'tcr_query';
@@ -85,6 +87,12 @@ createInterface({input:process.stdin}).on('line',line=>{
   return { root, log, options, messages: async () => (await readFile(log, "utf8")).trim().split("\n").map(x => JSON.parse(x)) };
 }
 async function create(options: AgentSessionOptions) { const session = await createAgentSession(options); sessions.push(session); return session; }
+
+test("partial-only turn cannot supply final output", async () => {
+  const f = await fixture("partial-only"), s = await create({ ...f.options, limits: { ...f.options.limits, startupMs: 3000 } });
+  await expect(s.runTurn(request())).rejects.toMatchObject({ code: "final_output_unavailable" });
+  expect((await s.closed).ownedProcessClosed).toBe(true);
+});
 
 test.each([undefined,"read-only","danger-full-access"] as const)("native agent execution mode %s reaches process, thread and every turn",async mode=>{
   const f=await fixture("tool","task_checkpoint_record_agent/0.159.0 (synthetic)");
@@ -125,7 +133,7 @@ test("modified qualified native bytes fail before the process starts",async()=>{
   await expect(readFile(f.log)).rejects.toMatchObject({code:"ENOENT"});
 });
 
-test.each(["tool", "early"])("%s: resident thread handles validated tools across two separate turns", async mode => {
+test.each(["tool", "early", "partial-answer"])("%s: resident thread handles validated tools across two separate turns", async mode => {
   const f = await fixture(mode); const s = await create(f.options); const pid = s.identity.pid;
   expect(() => s.assertHealthy()).not.toThrow();
   let observedStart: unknown;

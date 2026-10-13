@@ -153,6 +153,77 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(bad['status'], 'update_failed')
         self.assertEqual(runtime.current(self.root), a['selection'])
 
+    def phase(self, receipt):
+        schema = next(row for row in receipt['protocol']['observations'] if row['file'] == 'v2/ItemCompletedNotification.json')
+        return next(row for row in schema['checks'] if row['pointer'] == '/definitions/MessagePhase')
+
+    def test_new_shape_qualifies_and_unknown_phase_preserves_previous_selection(self):
+        def new_shape(*args):
+            receipt = qualify_fake(*args)
+            self.phase(receipt)['observed']['oneOf'].insert(1, {'enum': ['partial_answer'], 'type': 'string'})
+            return receipt
+        selected = self.ensure('0.162.1', qualify_candidate=new_shape)
+        self.assertEqual(selected['status'], 'updated')
+        before = (self.root / 'current.json').read_bytes()
+        def unknown(*args):
+            receipt = new_shape(*args)
+            self.phase(receipt)['observed']['oneOf'].append({'enum': ['unknown_phase'], 'type': 'string'})
+            return receipt
+        failed = self.ensure('0.162.2', qualify_candidate=unknown)
+        self.assertEqual(failed['updateFailure']['code'], 'runtime_protocol_observations_changed')
+        self.assertEqual(failed['selection'], selected['selection'])
+        self.assertEqual((self.root / 'current.json').read_bytes(), before)
+        self.assertFalse(list((self.root / 'versions').glob('.candidate-*')))
+
+    def test_reviewed_predecessor_receipt_reuses_and_rolls_back_without_rewriting(self):
+        contract = json.loads(runtime.CONTRACT.read_bytes())
+        hashes = contract.pop('compatible_receipt_contract_sha256')
+        for schema in contract['schemas']:
+            for check in schema['checks']:
+                check.pop('accepted_alternatives', None)
+        predecessor = self.root.parent / 'predecessor.json'
+        predecessor.write_text(json.dumps(contract, indent=2) + '\n')
+        self.assertEqual([runtime.digest(predecessor)], hashes)
+        with patch.object(runtime, 'CONTRACT', predecessor):
+            old = self.ensure('0.161.0')
+        receipt_path = Path(old['selection']['qualificationPath']); receipt_bytes = receipt_path.read_bytes()
+        self.assertEqual(runtime.current(self.root), old['selection'])
+        reused = self.ensure('0.161.0', install=lambda *_: self.fail('retained package must not be overwritten'))
+        self.assertEqual(reused['status'], 'current')
+        before = (self.root / 'current.json').read_bytes()
+        failed = self.ensure('0.162.1', qualify_candidate=lambda *_: (_ for _ in ()).throw(ValueError('runtime_probe_failed')))
+        self.assertEqual(failed['selection'], old['selection'])
+        self.assertEqual((self.root / 'current.json').read_bytes(), before)
+        self.ensure('0.162.1')
+        runtime.rollback(self.root, '0.161.0')
+        held = self.ensure('0.162.1', resolve=lambda: self.fail('hold suppresses discovery'))
+        self.assertEqual((held['status'], held['selection']), ('held_not_latest', old['selection']))
+        self.assertEqual(receipt_path.read_bytes(), receipt_bytes)
+        receipt = json.loads(receipt_bytes)
+        self.phase(receipt)['observed']['oneOf'].insert(1, {'enum': ['partial_answer'], 'type': 'string'})
+        runtime.write_atomic(receipt_path, receipt)
+        with self.assertRaisesRegex(ValueError, 'runtime_protocol_observations_changed'):
+            runtime.current(self.root)
+        receipt = json.loads(receipt_bytes); receipt['protocol']['contract_sha256'] = '0' * 64
+        runtime.write_atomic(receipt_path, receipt)
+        with self.assertRaisesRegex(ValueError, 'runtime_protocol_contract_changed'):
+            runtime.current(self.root)
+
+    def test_protocol_diagnostic_is_retained_without_values_or_stderr(self):
+        selected = self.ensure('0.161.0'); before = (self.root / 'current.json').read_bytes()
+        def fail(*_):
+            raise runtime.protocol.ProtocolSurfaceError('used_surface_changed', 'v2/ItemCompletedNotification.json', '/definitions/MessagePhase')
+        failed = self.ensure('0.162.1', qualify_candidate=fail)
+        details = {'code': 'used_surface_changed', 'schemaFile': 'v2/ItemCompletedNotification.json', 'jsonPointer': '/definitions/MessagePhase'}
+        self.assertEqual(failed['updateFailure'], details)
+        self.assertEqual(failed['selection'], selected['selection'])
+        self.assertEqual(runtime.read_json(self.root / 'latest-check.json')['updateFailure'], details)
+        self.assertEqual((self.root / 'current.json').read_bytes(), before)
+        for error in [ValueError('used_surface_changed:PRIVATE_VALUE:/secret'), RuntimeError('PRIVATE_STDERR'),
+                      runtime.protocol.ProtocolSurfaceError('used_surface_changed', 'PRIVATE_FILE', '/secret'),
+                      runtime.protocol.ProtocolSurfaceError('used_surface_changed', details['schemaFile'], '/PRIVATE_POINTER')]:
+            self.assertEqual(runtime.failure_details(error), {'code': 'runtime_update_failed'})
+
     def test_forced_shutdown_cannot_qualify_or_promote(self):
         a = self.ensure()
         for code in (-9, 1, False):

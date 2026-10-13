@@ -98,6 +98,22 @@ The protocol-generation workflow follows the
 The reviewed contract and qualification implementation are included in every
 source bundle, installed CLI version and full client plugin.
 
+The selected `MessagePhase` check accepts exactly the original `commentary` /
+`final_answer` schema or that same schema with `partial_answer` added. Other
+enum values and structural changes still fail qualification. Intermediate
+`partial_answer` messages never supply final output; a completed turn still needs
+an explicit `final_answer`, including after any admitted host tool calls.
+
+This additive contract revision explicitly lists the previous contract SHA-256
+in `compatible_receipt_contract_sha256`. Both host validators replay every
+original structural observation and the unchanged package/release/handshake
+checks before accepting that predecessor. Old receipts remain byte-for-byte
+unchanged, including retained versions used for rollback. Predecessor receipts
+cannot claim the newly accepted schema; it requires qualification under the
+current contract. An unknown contract hash or changed original observation is
+rejected. A future incompatible contract revision must remove this predecessor
+acceptance and provide a deliberate requalification path.
+
 ## Selection, failure and rollback
 
 The owned directory has this shape:
@@ -129,6 +145,14 @@ and reports `update_failed` with `latestCheckSucceeded: false`. If there is no
 qualified selection yet, startup cannot run a model. A check failure is never
 reported as proof that the retained version is the latest. The check timestamp is
 part of the result, so an older success remains identifiable as an older check.
+
+Protocol failures preserve `updateFailure.code`, `schemaFile` and `jsonPointer`
+using only locations declared in the bundled contract. For example, an unknown
+message phase reports `used_surface_changed`,
+`v2/ItemCompletedNotification.json` and `/definitions/MessagePhase`. Raw schema
+values, arbitrary exception text and native stderr are never copied into those
+details. Check receipts retain the same sanitized diagnostic and previous
+selection.
 
 ```sh
 task-checkpoint-record runtime rollback --config /absolute/task-checkpoint.json \

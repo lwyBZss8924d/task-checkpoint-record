@@ -11,7 +11,7 @@ const fail = (code: string): never => { throw new RuntimeUpdateError(code); };
 export type QualifiedCodexRuntime = Readonly<{ version: string; executableSha256: string; qualificationSha256: string }>;
 export type RuntimeSelection = { executable: string; version: string; qualificationPath: string };
 export type RuntimeUpdateResult = { status: "current" | "updated" | "deferred_busy" | "update_failed" | "held_not_latest"; selection: RuntimeSelection | null;
-  checkedAt: string | null; latestCheckSucceeded: boolean; updateFailure: { code: string } | null };
+  checkedAt: string | null; latestCheckSucceeded: boolean; updateFailure: { code: string; schemaFile?: string; jsonPointer?: string } | null };
 export type RuntimeUpdateOptions = { root: string; currentExecutable?: string | null; busy?: boolean; checkIntervalMs?: number;
   force?: boolean; signal?: AbortSignal; pythonExecutable?: string; deadlineMs?: number; rollbackVersion?: string; resumeLatest?: boolean };
 
@@ -91,9 +91,17 @@ export function validateRuntimeQualification(input: { executable: string; qualif
     const contractBytes = bytes(join(supportRoot(), "container/app-server-surface.json"));
     if (canonical(JSON.parse(contractBytes.toString("utf8"))) !== canonical(protocolContract)) fail("runtime_support_contract_mismatch");
     const observation = receipt.protocol;
-    const expected = protocolContract.schemas.map(s => ({ file: s.file, type: "object", required: s.required,
-      checks: s.checks.map(c => ({ pointer: c.pointer, observed: c.equals })) }));
-    if (observation?.contract_sha256 !== hash(contractBytes) || observation.version !== version || observation.result !== "protocol_surface_pass" || observation.authenticated_model_run !== false || observation.schemas !== expected.length || observation.structural_checks !== expected.reduce((n, s) => n + s.checks.length, 0) || canonical(observation.observations) !== canonical(expected)) fail("runtime_protocol_observations_changed");
+    const currentContract = observation?.contract_sha256 === hash(contractBytes);
+    if (!currentContract && !protocolContract.compatible_receipt_contract_sha256.includes(observation?.contract_sha256)) fail("runtime_protocol_observations_changed");
+    const expected = protocolContract.schemas.map((s, schemaIndex) => ({ file: s.file, type: "object", required: s.required,
+      checks: s.checks.map((c, index) => {
+        const value = observation?.observations?.[schemaIndex]?.checks?.[index]?.observed;
+        const check: { equals: unknown; accepted_alternatives?: unknown[] } = c;
+        const accepted = [check.equals, ...(currentContract ? check.accepted_alternatives ?? [] : [])];
+        if (!accepted.some(candidate => canonical(candidate) === canonical(value))) fail("runtime_protocol_observations_changed");
+        return { pointer: c.pointer, observed: value };
+      }) }));
+    if (observation.version !== version || observation.result !== "protocol_surface_pass" || observation.authenticated_model_run !== false || observation.schemas !== expected.length || observation.structural_checks !== expected.reduce((n, s) => n + s.checks.length, 0) || canonical(observation.observations) !== canonical(expected)) fail("runtime_protocol_observations_changed");
     return Object.freeze({ version, executableSha256: hashFile(input.executable), qualificationSha256: hash(raw) });
   } catch (e) { if (e instanceof RuntimeUpdateError) throw e; return fail("runtime_qualification_invalid"); }
 }

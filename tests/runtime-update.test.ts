@@ -3,7 +3,8 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { ensureLatestCodexRuntime, runRuntimeUpdateCommand, runtimeSelectionRevision } from "../src/runtime-update.ts";
+import { ensureLatestCodexRuntime, runRuntimeUpdateCommand, runtimeSelectionRevision, validateRuntimeQualification } from "../src/runtime-update.ts";
+import protocolContract from "../container/app-server-surface.json";
 import { fixtureQualifiedRuntime } from "./fixture-qualified-runtime.ts";
 
 const directories: string[] = [];
@@ -54,6 +55,38 @@ test("read-only revision lookup neither creates roots nor accepts ordinary accou
   const f = fixture("process.exit(0)");
   expect(runtimeSelectionRevision(f.root)).toBe(null); expect(existsSync(f.root)).toBe(false);
   expect(() => runtimeSelectionRevision(join(f.dir, ".codex", "nested"))).toThrow("runtime_root_in_client_or_credential_namespace");
+});
+
+test("host validates exact old/new shapes and reviewed predecessor receipts without rewriting", () => {
+  const f = fixture("process.exit(0)"), qualified = fixtureQualifiedRuntime(f.python, "0.161.0");
+  const original = readFileSync(qualified.qualificationPath);
+  const receipt = JSON.parse(original.toString("utf8"));
+  const phase = receipt.protocol.observations.find((s: any) => s.file === "v2/ItemCompletedNotification.json").checks.find((c: any) => c.pointer === "/definitions/MessagePhase");
+  expect(validateRuntimeQualification(qualified).version).toBe("0.161.0");
+  receipt.protocol.contract_sha256 = protocolContract.compatible_receipt_contract_sha256[0];
+  writeFileSync(qualified.qualificationPath, JSON.stringify(receipt));
+  const predecessor = readFileSync(qualified.qualificationPath);
+  expect(validateRuntimeQualification(qualified).version).toBe("0.161.0");
+  expect(readFileSync(qualified.qualificationPath)).toEqual(predecessor);
+  phase.observed.oneOf.splice(1, 0, { enum: ["partial_answer"], type: "string" });
+  writeFileSync(qualified.qualificationPath, JSON.stringify(receipt));
+  expect(() => validateRuntimeQualification(qualified)).toThrow("runtime_protocol_observations_changed");
+  receipt.protocol.contract_sha256 = JSON.parse(original.toString("utf8")).protocol.contract_sha256;
+  writeFileSync(qualified.qualificationPath, JSON.stringify(receipt));
+  expect(validateRuntimeQualification(qualified).version).toBe("0.161.0");
+  phase.observed.oneOf.push({ enum: ["unknown_phase"], type: "string" });
+  writeFileSync(qualified.qualificationPath, JSON.stringify(receipt));
+  expect(() => validateRuntimeQualification(qualified)).toThrow("runtime_protocol_observations_changed");
+  receipt.protocol.contract_sha256 = "0".repeat(64);
+  writeFileSync(qualified.qualificationPath, JSON.stringify(receipt));
+  expect(() => validateRuntimeQualification(qualified)).toThrow("runtime_protocol_observations_changed");
+});
+
+test("structured protocol failure survives the updater process boundary", async () => {
+  const details = { code: "used_surface_changed", schemaFile: "v2/ItemCompletedNotification.json", jsonPointer: "/definitions/MessagePhase" };
+  const f = fixture(`process.stdout.write(JSON.stringify({status:"update_failed",selection:null,latestCheckSucceeded:false,updateFailure:${JSON.stringify(details)}}));process.exitCode=1;`);
+  const report = await ensureLatestCodexRuntime({ root: f.root, pythonExecutable: f.python });
+  expect(report.updateFailure).toEqual(details); expect(report.latestCheckSucceeded).toBe(false);
 });
 
 test("FIFO qualification and package files reject promptly before blocking reads", () => {
