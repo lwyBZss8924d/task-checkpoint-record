@@ -1,6 +1,6 @@
 {
   "name": "task-checkpoint-record",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Local task checkpoints, bounded native supervision, helper tools and exact recall",
   "type": "module",
   "bin": {
