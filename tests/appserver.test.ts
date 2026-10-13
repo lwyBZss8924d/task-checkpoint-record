@@ -35,11 +35,13 @@ const finish = () => {
   send({method:"item/completed",params:{threadId:"another-thread",turnId:turn,item:{type:"agentMessage",id:"foreign",phase:"final_answer",text:'{"ok":false}'}}});
   send({method:"turn/completed",params:{threadId:thread,turn:{id:"another-turn",status:"failed",items:[]}}});
   if(mode === "tool") send({method:"item/started",params:{threadId:thread,turnId:turn,item:{type:"commandExecution",id:"cmd"}}});
-  const item = {type:"agentMessage",id:"final",phase:mode === "no-final"?"commentary":"final_answer",text:mode === "bad-output"?'{"ok":"wrong"}':mode === "not-json"?'oops':mode === "large-output"?'x'.repeat(20000):'{"ok":true}'};
+  const partial = {type:"agentMessage",id:"partial",phase:"partial_answer",text:'{"ok":false}'};
+  if(mode === "partial-answer") send({method:"item/completed",params:{threadId:thread,turnId:turn,item:partial}});
+  const item = {type:"agentMessage",id:"final",phase:mode === "no-final"?"commentary":mode === "partial-only"?"partial_answer":"final_answer",text:mode === "bad-output"?'{"ok":"wrong"}':mode === "not-json"?'oops':mode === "large-output"?'x'.repeat(20000):'{"ok":true}'};
   send({method:"item/completed",params:{threadId:thread,turnId:turn,item}});
   send({method:"thread/tokenUsage/updated",params:{threadId:thread,turnId:turn,tokenUsage:{last:{totalTokens:20,inputTokens:10,cachedInputTokens:2,outputTokens:10,reasoningOutputTokens:5,unexpected:"SECRET_USAGE"}}}});
   if(mode === "terminal-conflict") send({method:"turn/completed",params:{threadId:thread,turn:{id:turn,status:"failed",items:[]}}});
-  send({method:"turn/completed",params:{threadId:thread,turn:{id:turn,status:mode==="failed"?"failed":"completed",items:[item]}}});
+  send({method:"turn/completed",params:{threadId:thread,turn:{id:turn,status:mode==="failed"?"failed":"completed",items:mode==="partial-answer"?[partial,item]:[item]}}});
   if(mode === "duplicate-completion") send({method:"turn/completed",params:{threadId:thread,turn:{id:turn,status:"completed",items:[item]}}});
   if(mode === "late-terminal-conflict") setTimeout(()=>send({method:"turn/completed",params:{threadId:thread,turn:{id:turn,status:"failed",items:[]}}}),10);
 };
@@ -184,7 +186,7 @@ describe("owned Codex App Server adapter", () => {
   test("read-only response with network access is not the requested policy",async()=>{
     const f=await fixture("wrong-network");await expect(runAppServerTask(f.options)).rejects.toMatchObject({code:"runtime_policy_not_honored"});
   });
-  test.each(["success", "partial", "early", "ignore-eof", "duplicate-completion"])("%s: handshake, native IDs, bounded output and owned cleanup", async mode => {
+  test.each(["success", "partial", "early", "ignore-eof", "duplicate-completion", "partial-answer"])("%s: handshake, native IDs, bounded output and owned cleanup", async mode => {
     const f = await fixture(mode); const result = await runAppServerTask(f.options);
     expect(result.output).toEqual({ok:true}); expect(result.native).toEqual({threadId:"thread-native",turnId:"turn-native",sessionId:"session-distinct",rollout:{path:null,state:"unavailable",contentBindingVerified:false}});
     expect(result.runtime.ownedProcessClosed).toBe(true);
@@ -279,7 +281,7 @@ describe("owned Codex App Server adapter", () => {
     ["wrong-effort","model_selection_not_honored"], ["version","unsupported_codex_version"],
     ["rpc-error","rpc_error"], ["approval","server_request_rejected"], ["tool","tool_or_unexpected_item"],
     ["bad-output","output_validation_failed"], ["not-json","output_validation_failed"],
-    ["no-final","final_output_unavailable"], ["failed","turn_not_completed"],
+    ["no-final","final_output_unavailable"], ["partial-only","final_output_unavailable"], ["failed","turn_not_completed"],
     ["malformed","invalid_rpc_message"], ["close","server_closed"],
   ])("%s fails closed without exposing source errors", async (mode, code) => {
     const f=await fixture(mode); await expect(runAppServerTask(f.options)).rejects.toMatchObject({name:"AppServerError",code,message:code});

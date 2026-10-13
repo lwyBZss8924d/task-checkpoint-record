@@ -7,6 +7,15 @@ import re
 import hashlib
 
 
+class ProtocolSurfaceError(ValueError):
+    """Contract-owned locations only; never include schema values or stderr."""
+    def __init__(self, code, schema_file, json_pointer=''):
+        self.code = code
+        self.schema_file = schema_file
+        self.json_pointer = json_pointer
+        super().__init__(code + ':' + schema_file + (':' + json_pointer if json_pointer else ''))
+
+
 def normalized(value, ignored):
     if isinstance(value, dict):
         return {key: normalized(item, ignored) for key, item in value.items() if key not in ignored}
@@ -43,13 +52,21 @@ def pointer(document, value):
 
 def verify_schema(document, contract, ignored):
     if document.get('type') != 'object':
-        raise ValueError('schema_root_type_changed')
+        raise ProtocolSurfaceError('schema_root_type_changed', contract['file'])
     if sorted(document.get('required', [])) != contract['required']:
-        raise ValueError('required_surface_changed:' + contract['file'])
+        raise ProtocolSurfaceError('required_surface_changed', contract['file'], '/required')
     for check in contract['checks']:
-        observed = normalized(pointer(document, check['pointer']), ignored)
-        if canonical(observed) != canonical(check['equals']):
-            raise ValueError('used_surface_changed:' + contract['file'] + ':' + check['pointer'])
+        try:
+            observed = normalized(pointer(document, check['pointer']), ignored)
+        except (KeyError, IndexError, TypeError, ValueError):
+            raise ProtocolSurfaceError('used_surface_missing', contract['file'], check['pointer']) from None
+        if not matches_check(observed, check):
+            raise ProtocolSurfaceError('used_surface_changed', contract['file'], check['pointer'])
+
+
+def matches_check(observed, check, *, alternatives=True):
+    accepted = [check['equals'], *(check.get('accepted_alternatives', []) if alternatives else [])]
+    return any(canonical(observed) == canonical(value) for value in accepted)
 
 
 def verify_surface(schema_dir, contract_path, version):

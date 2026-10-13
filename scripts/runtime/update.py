@@ -289,7 +289,10 @@ def validate_selection(selection):
         raise ValueError('runtime_official_asset_binding')
     if receipt.get('observed_version') != 'codex-cli ' + version or receipt.get('package') != 'package' or receipt.get('entrypoint') != 'bin/codex' or receipt.get('authenticated_model_run') is not False:
         raise ValueError('runtime_qualification_identity')
-    if receipt['protocol']['contract_sha256'] != digest(CONTRACT):
+    current_contract = receipt['protocol']['contract_sha256'] == digest(CONTRACT)
+    # Only explicitly reviewed predecessors can retain their original receipts.
+    # They must still match every primary (pre-alternative) structural check.
+    if not current_contract and receipt['protocol']['contract_sha256'] not in contract.get('compatible_receipt_contract_sha256', []):
         raise ValueError('runtime_protocol_contract_changed')
     initialized = receipt.get('initialize', {})
     if initialized.get('method') != 'initialize' or initialized.get('observed_version') != selection['version'] or initialized.get('initialized_notification_sent') is not True or canonical(initialized.get('threads_started')) != '0' or canonical(initialized.get('turns_started')) != '0' or canonical(initialized.get('process_exit_code')) != '0':
@@ -310,8 +313,14 @@ def validate_selection(selection):
     if len(checks) != len(contract['schemas']):
         raise ValueError('runtime_protocol_observations_missing')
     for observed, expected in zip(checks, contract['schemas']):
+        values = observed.get('checks', [])
+        if len(values) != len(expected['checks']):
+            raise ValueError('runtime_protocol_observations_changed')
+        for value, check in zip(values, expected['checks']):
+            if not protocol.matches_check(value.get('observed'), check, alternatives=current_contract):
+                raise ValueError('runtime_protocol_observations_changed')
         want = {'file': expected['file'], 'type': 'object', 'required': expected['required'],
-                'checks': [{'pointer': row['pointer'], 'observed': row['equals']} for row in expected['checks']]}
+                'checks': [{'pointer': row['pointer'], 'observed': value['observed']} for value, row in zip(values, expected['checks'])]}
         if canonical(observed) != canonical(want):
             raise ValueError('runtime_protocol_observations_changed')
     return selection
@@ -338,6 +347,21 @@ def current(root):
 def result(status, selection, checked_at=None, succeeded=False, failure=None):
     return {'status': status, 'selection': selection, 'checkedAt': checked_at,
             'latestCheckSucceeded': succeeded, 'updateFailure': failure}
+
+
+def failure_details(error):
+    if isinstance(error, protocol.ProtocolSurfaceError):
+        # Verify locations against our contract before publishing structured data.
+        contract = read_json(CONTRACT)
+        schema = next((row for row in contract['schemas'] if row['file'] == error.schema_file), None)
+        allowed = {'schema_root_type_changed': [''], 'required_surface_changed': ['/required'],
+                   'used_surface_changed': [row['pointer'] for row in schema['checks']] if schema else [],
+                   'used_surface_missing': [row['pointer'] for row in schema['checks']] if schema else []}
+        if schema and error.json_pointer in allowed.get(error.code, []):
+            return {'code': error.code, 'schemaFile': error.schema_file, 'jsonPointer': error.json_pointer}
+        return {'code': 'runtime_update_failed'}
+    code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z0-9_]+', str(error)) else 'runtime_update_failed'
+    return {'code': code}
 
 
 def held_selection(root):
@@ -422,8 +446,7 @@ def ensure(root, *, busy=False, force=False, interval_ms=14400000, resume_latest
         write_atomic(root / 'current.json', {'schema_version': 'task-checkpoint.codex-selection.v1', 'selection': selected})
         report = result('updated' if changed else 'current', selected, stamp, True)
     except Exception as error:
-        code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z0-9_]+', str(error)) else 'runtime_update_failed'
-        report = result('update_failed', selection, stamp, False, {'code': code})
+        report = result('update_failed', selection, stamp, False, failure_details(error))
     try:
         owned_directory(checks)
         write_atomic(checks / (uuid.uuid4().hex + '.json'), report)
@@ -502,6 +525,5 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as error:
-        code = str(error) if isinstance(error, ValueError) and re.fullmatch(r'[a-z0-9_]+', str(error)) else 'runtime_update_failed'
-        print(canonical({'status': 'update_failed', 'selection': None, 'checkedAt': now(), 'latestCheckSucceeded': False, 'updateFailure': {'code': code}}))
+        print(canonical(result('update_failed', None, now(), False, failure_details(error))))
         raise SystemExit(1)

@@ -1107,7 +1107,31 @@
                 "type": "string"
               }
             ]
-          }
+          },
+          "accepted_alternatives": [
+            {
+              "oneOf": [
+                {
+                  "enum": [
+                    "commentary"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "partial_answer"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "final_answer"
+                  ],
+                  "type": "string"
+                }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -1325,5 +1349,8 @@
     "Only fields actually read/sent plus selected nested status/identity/usage contracts are included; this is not the whole public protocol.",
     "The0.158.0 flexUnavailable and promax enum additions are outside consumed error/plan fields; full version-specific schema comparison is retained separately.",
     "Resident agent runtime additionally uses flat function dynamicTools, item/tool/call with inputText responses, and config/read to refuse effective configured MCP servers; native universal tool prevention is not asserted."
+  ],
+  "compatible_receipt_contract_sha256": [
+    "c7afab5685efc08dcb3bec27d02e8b8029c53d1353c06da28f306bbb91407734"
   ]
 }
